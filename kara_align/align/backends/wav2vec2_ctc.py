@@ -38,6 +38,7 @@ from typing import Any, Optional, Sequence
 
 import numpy as np
 
+from ...gpu import cuda_device, is_rocm
 from ...interfaces import Emission, TokenizedUnit
 from ...models import BackendInfo
 from ...timebase import FrameMap
@@ -69,8 +70,8 @@ def resolve_device(device: str) -> str:
     torch, _ = _import_ml()
     if device and device != "auto":
         return device
-    if torch.cuda.is_available():
-        return "cuda"
+    if torch.cuda.is_available() and (dev := cuda_device(torch)):
+        return dev  # NVIDIA, or AMD (ROCm): its discrete card
     if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
@@ -218,7 +219,7 @@ class Wav2Vec2CTCBackend:
         rf = receptive_field(kernels, strides)
         sr = e["sample_rate"]
 
-        model = [e["model"]]  # the model this run uses (the CPU copy after an MPS failure)
+        model = [e["model"]]  # the model this run uses (the CPU copy after an MPS / ROCm failure)
 
         def forward(seg: np.ndarray) -> np.ndarray:
             with torch.inference_mode():
@@ -226,11 +227,13 @@ class Wav2Vec2CTCBackend:
                 try:
                     logits = model[0](inp.to(self.device)).logits
                 except (RuntimeError, NotImplementedError) as exc:
-                    if self.device != "mps":
+                    # ROCm too: its torch has kernels for the GPU families chosen at install only
+                    rocm = self.device.startswith("cuda") and is_rocm(torch)
+                    if self.device != "mps" and not rocm:
                         raise
-                    self.notes.append(f"MPS 运行失败（{type(exc).__name__}），已改用 CPU")
+                    self.notes.append(f"{'AMD 显卡（ROCm）' if rocm else 'MPS '}运行失败（{type(exc).__name__}），已改用 CPU")
                     self.device = "cpu"
-                    # the CPU model has its own cache entry; the shared MPS entry is left as it was
+                    # the CPU model has its own cache entry; the shared GPU entry is left as it was
                     self._entry = load_model(self.model_id, self.revision, "cpu")
                     model[0] = self._entry["model"]
                     logits = model[0](inp).logits

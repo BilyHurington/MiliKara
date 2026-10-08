@@ -187,6 +187,15 @@ if args.get("device") == "cpu":
     import torch
     torch.backends.mps.is_available = lambda: False
     torch.cuda.is_available = lambda: False
+else:
+    import torch
+    from kara_align.gpu import cuda_device
+    if torch.cuda.is_available():
+        dev = cuda_device(torch)
+        if dev is None:  # AMD (ROCm): the installed torch runs on none of the GPUs here
+            torch.cuda.is_available = lambda: False
+        elif dev != "cuda":  # the separator runs on "cuda", the current device
+            torch.cuda.set_device(torch.device(dev))
 from audio_separator.separator import Separator
 sep = Separator(output_dir=args["out_dir"], output_format="WAV", sample_rate=args["sample_rate"],
                 normalization_threshold=args.get("normalization", 0.9), model_file_dir=args["model_dir"])

@@ -92,7 +92,7 @@ milikara serve --allow-host 192.168.1.20      # 另外接受这个主机名的�
 
 发布 `v*` 标签时，`update-files.yml` 用 `build.py release` 上传：程序包 `MiliKara-<版本>-app.zip`（wheel、两种启动脚本和 fontconfig、各版本的使用说明、许可、manifest）、字体包、单独的更新程序（给没有它的旧文件夹）和 `manifest.json`（版本、标签、各文件的大小和 SHA-256）。更新程序读取最新 Release 的 manifest，比较 `version.json`（旧版没有：按 `kirakara-*.dist-info`、`KiraKara.bat` 推断），用 wheel 的 `Requires-Dist` 检查依赖是否都已满足（不满足则提示下载完整包），把原来的程序、启动脚本、说明移到 `update/backup/<版本>/` 后装入新版本，用新版本试启动，失败就放回。`MILIKARA_UPDATE_BASE` 可以换成镜像（测试里用本地文件夹）。程序本身在打开时通过 `/api/update` 读取同一个 manifest，提示有新版本。
 
-诊断：`milikara serve` 把失败的任务 / 操作（含 traceback）和服务的错误写到 `~/.kara_align/logs/milikara.log`（1 MB 轮换，保留 3 份）；`/api/diagnostics` 生成一份可以直接粘贴的报告（版本、系统、Python、torch / CUDA / MPS、ffmpeg 与 libass、视频编码器、主要设置、失败任务的步骤和详情、日志末尾），用户目录替换为 `~`，不含 API Key。
+诊断：`milikara serve` 把失败的任务 / 操作（含 traceback）和服务的错误写到 `~/.kara_align/logs/milikara.log`（1 MB 轮换，保留 3 份）；`/api/diagnostics` 生成一份可以直接粘贴的报告（版本、系统、Python、torch / CUDA / ROCm / MPS、ffmpeg 与 libass、视频编码器、主要设置、失败任务的步骤和详情、日志末尾），用户目录替换为 `~`，不含 API Key。
 
 磁盘空间（`kara_align/storage.py`）：项目文件夹按条目分成原曲和视频、分轨、背景、导出、没有条目指向的文件（`unused`）和其他；残留文件还包括已导入任务的上传副本、没有项目文件的项目文件夹、`.deleted-*` 文件夹（10 分钟内的新文件不算，可能正在上传或导入）。替换原曲、视频、分轨或背景时，旧文件在没有别的条目指向时立即删除；删除项目时一起删除只属于它的播放缓存和波形缓存（按音频 sha256，别的项目用到的保留）。有任务或操作在处理的项目不能清理，缓存在有任何任务运行时不能清理。
 

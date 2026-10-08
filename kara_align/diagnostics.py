@@ -75,7 +75,9 @@ def _torch() -> str:
     parts = [torch.__version__]
     try:
         if torch.cuda.is_available():
-            parts.append(f"CUDA {torch.version.cuda} · {torch.cuda.get_device_name(0)}")
+            from .gpu import describe
+
+            parts.append(describe(torch))
         elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
             parts.append("MPS")
         else:

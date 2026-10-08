@@ -3,6 +3,8 @@
 const HINTS: [RegExp, string][] = [
   [/out of memory|CUDA error: out of memory|MPS backend out of memory|DefaultCPUAllocator|MemoryError|内存不足/i,
     '显存或内存不够：关掉其他占内存的程序后重试；还不行的话，在设置里把人声分离改为“只用 CPU”。'],
+  [/invalid device function|invalid kernel file|no kernel image is available|hipErrorNoBinaryForGpu|TensileLibrary/i,
+    '安装的 torch 不支持这块显卡：AMD 显卡请按 README 的安装说明重新安装与型号对应的 ROCm 版 torch；NVIDIA 显卡可能太旧，可以在设置里把人声分离改为“只用 CPU”。'],
   [/No space left|ENOSPC|disk full|磁盘已满|空间不足/i,
     '磁盘空间不足：清理出几 GB 空间后重试（项目和缓存在用户目录的 .kara_align 文件夹里）。'],
   [/ConnectError|ConnectTimeout|ReadTimeout|TimeoutException|getaddrinfo|Name or service not known|SSLError|无法连接|网络/i,

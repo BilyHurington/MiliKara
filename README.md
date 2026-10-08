@@ -62,13 +62,21 @@
 
 离线版都由 GitHub Actions 构建（`.github/workflows/windows-package.yml`、`macos-package.yml`；打包脚本在 `packaging/`）。
 
-**从源码安装**：需要 Python 3.11+、[uv](https://docs.astral.sh/uv/)，以及带 libass 的 `ffmpeg`（macOS：`brew install ffmpeg-full`）。目前主要在 macOS（Apple 芯片）上使用和测试；Linux / Windows 上可以用 CPU 或 NVIDIA 显卡运行。
+**从源码安装**：需要 Python 3.11+、[uv](https://docs.astral.sh/uv/)，以及带 libass 的 `ffmpeg`（macOS：`brew install ffmpeg-full`）。目前主要在 macOS（Apple 芯片）上使用和测试；Linux / Windows 上可以用 CPU、NVIDIA 显卡或 AMD 显卡（见下）运行。
 
 ```bash
 git clone <仓库地址> MiliKara && cd MiliKara
 uv venv --python 3.12 .venv
 uv pip install -e ".[ml,separation]"    # 对齐模型（torch + transformers）和人声分离
 ```
+
+**AMD 显卡**（ROCm）：在上面的 `uv pip install -e …` 之前，先从 AMD 的软件源装上与显卡对应的 torch：
+
+```bash
+uv pip install "torch[device-gfx1100]" --index-url https://stable.repo.amd.com/rocm/whl-next/
+```
+
+把 `gfx1100` 换成你的显卡：RX 7900 系列 `gfx1100`，RX 7800 / 7700 `gfx1101`，RX 7600 `gfx1102`，RX 9070 系列 `gfx1201`，RX 9060 `gfx1200`；Radeon 890M / 880M `gfx1150`，Ryzen AI Max `gfx1151`，780M / 760M `gfx1103`（完整列表见 [AMD 的说明](https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html)）。显卡驱动请更新到最新（AMD 列出的配套驱动是 Adrenalin 26.10.41.05）。装好后 `python -c "import torch; print(torch.cuda.is_available())"` 应输出 `True`，诊断信息里显示 `ROCm … · 显卡名`；“自动”会使用这块显卡（同时有核显时用独立显卡）。RX 7900 XT 上一首 3 分钟的歌人声分离约 40 秒（同一台电脑上 CPU 版约 6 分钟）。AMD 的 torch 用 CPU 计算时比 CPU 版慢十几倍：显卡用不了时，请删掉 `.venv` 按上面的步骤重新安装（跳过这一步）。
 
 模型在第一次使用时下载到项目目录的 `models/` 里（对齐模型约 1.2 GB，默认的分离模型约 1 GB），之后可以离线使用。环境变量 `KARA_ALIGN_MODELS` 可以把它指到别处。
 
