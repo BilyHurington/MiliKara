@@ -88,7 +88,7 @@ milikara serve --allow-host 192.168.1.20      # 另外接受这个主机名的�
 
 ## 离线版的更新
 
-`packaging/updater/update.py` 是更新程序（只用标准库）；打包时 `packaging/updater/build.py package` 在它前面加一行启动命令，生成 `更新.bat`（一行 cmd，Python 用 `-x` 跳过）和 `更新.command`（sh 行藏在 Python 字符串里），用文件夹里自带的 Python 运行，并写入 `version.json`（版本、平台、组件）。这两个文件不在仓库里，只在离线包和 Release 里。
+`packaging/updater/update.py` 是更新程序（只用标准库）；打包时 `packaging/updater/build.py package` 在它前面加一行启动命令，生成 `更新.bat`（一行 cmd，Python 用 `-x` 跳过）和 `更新.command`（sh 行藏在 Python 字符串里），用文件夹里自带的 Python 运行，并写入 `version.json`（版本、平台、Windows 的版本、组件）。这两个文件不在仓库里，只在离线包和 Release 里。Windows 离线包有三个版本：CPU、NVIDIA（CUDA）和 AMD 显卡（ROCm，torch 来自 AMD 的软件源，包含 `windows-package.yml` 里 `ROCM_DEVICES` 列出的显卡系列）；没有 `version.json` 的旧文件夹按 torch 的版本号（`+cu…`、`+rocm…`）区分，更新时换上对应版本的使用说明。
 
 发布 `v*` 标签时，`update-files.yml` 用 `build.py release` 上传：程序包 `MiliKara-<版本>-app.zip`（wheel、两种启动脚本和 fontconfig、各版本的使用说明、许可、manifest）、字体包、单独的更新程序（给没有它的旧文件夹）和 `manifest.json`（版本、标签、各文件的大小和 SHA-256）。更新程序读取最新 Release 的 manifest，比较 `version.json`（旧版没有：按 `kirakara-*.dist-info`、`KiraKara.bat` 推断），用 wheel 的 `Requires-Dist` 检查依赖是否都已满足（不满足则提示下载完整包），把原来的程序、启动脚本、说明移到 `update/backup/<版本>/` 后装入新版本，用新版本试启动，失败就放回。`MILIKARA_UPDATE_BASE` 可以换成镜像（测试里用本地文件夹）。程序本身在打开时通过 `/api/update` 读取同一个 manifest，提示有新版本。
 

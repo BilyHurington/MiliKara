@@ -1,7 +1,7 @@
 # Portable Windows builds of MiliKara: tests on Windows, then a folder with its own Python, all
-# dependencies, ffmpeg and the two default models (CPU and NVIDIA CUDA variants), checked by running a
-# whole song through the launcher, packed as 7z volumes (< 2 GB each, the release asset limit) and
-# uploaded to a GitHub release.
+# dependencies, ffmpeg and the two default models (CPU, NVIDIA CUDA and AMD ROCm variants), checked by
+# running a whole song through the launcher, packed as 7z volumes (< 2 GB each, the release asset limit)
+# and uploaded to a GitHub release.
 #
 #   Actions → Windows package → Run workflow   → prerelease "windows-preview" (replaced each run)
 #   git push origin v0.2.0                      → release "v0.2.0"
@@ -13,8 +13,8 @@ on:
       variants:
         description: 要打包的版本
         type: choice
-        options: [both, cpu, cuda]
-        default: both
+        options: [all, cpu, cuda, rocm]
+        default: all
   push:
     tags: ["v*"]
 
@@ -29,6 +29,10 @@ env:
   PYTHON_VERSION: "3.12"
   UV_PYTHON_PREFERENCE: only-managed
   PYTHONUTF8: "1"
+  # AMD's torch carries the kernels of each graphics-card family as packages of their own: RX 6800 / 6900
+  # (gfx1030), RX 7000 and the 780M / 760M (gfx110x), the Ryzen AI 300 / AI Max integrated GPUs (gfx115x),
+  # RX 9000 (gfx120x).  The cards are listed in packaging/notes.py too.
+  ROCM_DEVICES: device-gfx1030,device-gfx1100,device-gfx1101,device-gfx1102,device-gfx1103,device-gfx1150,device-gfx1151,device-gfx1152,device-gfx1153,device-gfx1200,device-gfx1201
 
 jobs:
   test:
@@ -91,7 +95,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: ${{ fromJSON(github.event.inputs.variants == 'cpu' && '["cpu"]' || github.event.inputs.variants == 'cuda' && '["cuda"]' || '["cpu","cuda"]') }}
+        variant: ${{ fromJSON(contains(fromJSON('["cpu","cuda","rocm"]'), github.event.inputs.variants) && format('["{0}"]', github.event.inputs.variants) || '["cpu","cuda","rocm"]') }}
     env:
       VARIANT: ${{ matrix.variant }}
       VERSION: ${{ needs.release.outputs.version }}
@@ -135,10 +139,16 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           $py = "$env:APP\python\python.exe"
-          $index = if ($env:VARIANT -eq "cuda") { "https://download.pytorch.org/whl/cu128" } else { "https://download.pytorch.org/whl/cpu" }
-          uv pip install --python $py torch --index-url $index
+          if ($env:VARIANT -eq "rocm") {
+            # (it brings its own HIP runtime: the user needs only the graphics driver).  torchvision from AMD
+            # too: the separator needs it (onnx2torch), and PyPI's pins another torch version
+            uv pip install --python $py "torch[$env:ROCM_DEVICES]" torchvision --index-url https://stable.repo.amd.com/rocm/whl-next/
+          } else {
+            $index = if ($env:VARIANT -eq "cuda") { "https://download.pytorch.org/whl/cu128" } else { "https://download.pytorch.org/whl/cpu" }
+            uv pip install --python $py torch --index-url $index
+          }
           uv pip install --python $py ".[ml,separation]"
-          & $py -c "import torch, transformers, audio_separator, kara_align; print('torch', torch.__version__, 'cuda', torch.version.cuda, '| transformers', transformers.__version__)"
+          & $py -c "import torch, transformers, audio_separator, kara_align; print('torch', torch.__version__, 'cuda', torch.version.cuda, 'hip', getattr(torch.version, 'hip', None), '| transformers', transformers.__version__)"
           # only needed to build extensions against torch / for the removed scripts
           Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$env:APP\python\Lib\site-packages\torch\include", "$env:APP\python\Scripts"
           Get-ChildItem "$env:APP\python\Lib\site-packages\torch\lib" -Filter *.lib | Remove-Item -Force

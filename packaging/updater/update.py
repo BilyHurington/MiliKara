@@ -104,7 +104,7 @@ class Folder:
         if self.platform != "windows":
             return None
         for p in self.site.glob("torch-*.dist-info"):
-            return "cuda" if "+cu" in p.name else "cpu"
+            return "cuda" if "+cu" in p.name else "rocm" if "+rocm" in p.name else "cpu"
         return "cpu"
 
     def state(self) -> dict:
@@ -671,7 +671,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     auto = True if args.yes else (None if sys.stdin.isatty() else True)
     folder = Folder(Path(args.root).resolve() if args.root else me.parent)
     state = folder.state()
-    variant = {"cpu": " · CPU 版", "cuda": " · NVIDIA 显卡版"}.get(state.get("variant") or "", "")
+    variant = {"cpu": " · CPU 版", "cuda": " · NVIDIA 显卡版", "rocm": " · AMD 显卡版"}.get(state.get("variant") or "", "")
     say(f"MiliKara 更新程序\n当前：{state['label']}（{'Windows' if folder.platform == 'windows' else 'macOS'}{variant}）")
     if args.rollback:
         return do_rollback(folder, auto)

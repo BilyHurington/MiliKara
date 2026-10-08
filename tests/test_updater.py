@@ -148,6 +148,24 @@ def test_a_version_that_does_not_start_is_put_back(tmp_path, monkeypatch):
     assert snapshot(root) == before
 
 
+def test_the_windows_variants(tmp_path):
+    """CPU / NVIDIA / AMD folders are told apart by their torch; the program package has each one's notes."""
+    root = tmp_path / "MiliKara"
+    site = root / "python" / "Lib" / "site-packages"
+    site.mkdir(parents=True)
+    (root / "python" / "python.exe").write_bytes(b"")
+    for torch, variant in (("2.14.1+cpu", "cpu"), ("2.14.1+cu128", "cuda"), ("2.14.0+rocm10.1.0", "rocm"), ("2.14.1", "cpu")):
+        for d in site.glob("torch-*.dist-info"):
+            d.rmdir()
+        (site / f"torch-{torch}.dist-info").mkdir()
+        assert update.Folder(root).variant() == variant, torch
+    rel = make_release(tmp_path, "1.1.0")
+    with zipfile.ZipFile(rel / "download" / "v1.1.0" / "MiliKara-1.1.0-app.zip") as z:
+        notes = {n: z.read(n).decode("utf-8-sig") for n in z.namelist() if n.startswith("notes/")}
+    assert sorted(notes) == ["notes/macos.txt", "notes/windows-cpu.txt", "notes/windows-cuda.txt", "notes/windows-rocm.txt"]
+    assert "AMD 显卡版" in notes["notes/windows-rocm.txt"] and "RX 7000" in notes["notes/windows-rocm.txt"]
+
+
 def test_the_updater_files(tmp_path):
     bat = build.make_updater("windows")
     first = bat.split(b"\r\n")[0]

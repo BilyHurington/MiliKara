@@ -1,6 +1,6 @@
 """Make the updater and the update files of a release (used by the packaging workflows).
 
-    python packaging/updater/build.py package <folder> --platform windows|macos [--variant cpu|cuda]
+    python packaging/updater/build.py package <folder> --platform windows|macos [--variant cpu|cuda|rocm]
         更新.bat / 更新.command and version.json into a portable package folder
 
     python packaging/updater/build.py release <out> --tag v1.2.0 [--wheel dir] [--fonts dir]
@@ -155,7 +155,7 @@ def cmd_release(a: argparse.Namespace) -> None:
                 z.write(REPO_ROOT / "packaging" / plat / launcher, f"launchers/{plat}/{launcher}")
                 z.write(REPO_ROOT / "packaging" / plat / "fonts.conf", f"launchers/{plat}/fonts.conf")
             for plat, variant, name in (("windows", "cpu", "windows-cpu"), ("windows", "cuda", "windows-cuda"),
-                                        ("macos", None, "macos")):
+                                        ("windows", "rocm", "windows-rocm"), ("macos", None, "macos")):
                 z.writestr(f"notes/{name}.txt", notes.encode(plat, notes.render(plat, variant, a.tag)))
             z.write(REPO_ROOT / "LICENSE", "LICENSE")
             z.writestr("manifest.json", json.dumps(app_manifest, ensure_ascii=False, indent=1))
@@ -175,7 +175,7 @@ def main() -> None:
     p = sub.add_parser("package")
     p.add_argument("folder")
     p.add_argument("--platform", choices=["windows", "macos"], required=True)
-    p.add_argument("--variant", choices=["cpu", "cuda"])
+    p.add_argument("--variant", choices=["cpu", "cuda", "rocm"])
     p.set_defaults(fn=cmd_package)
     r = sub.add_parser("release")
     r.add_argument("out")
