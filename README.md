@@ -54,11 +54,11 @@
 
 ## 安装
 
-**Windows 离线版**：在 Releases 里下载 `MiliKara-…-windows-x64-cpu.7z`（CPU 版）或 `…-cuda.7z`（NVIDIA 显卡版，需要 570 或更新的驱动；超过 2 GB 时分成 `.7z.001`、`.7z.002`… 几个分卷，需要全部下载），用 7-Zip 解压，双击 `MiliKara.bat`。自带 Python、依赖、ffmpeg 和两个默认模型，不需要联网。
+**Windows 离线版**：在 Releases 里下载 `MiliKara-…-windows-x64-cpu.7z`（CPU 版）、`…-cuda.7z`（NVIDIA 显卡版，需要 570 或更新的驱动）或 `…-rocm.7z`（AMD 显卡版，v1.2.0 起：Radeon RX 6800 / 6900、RX 7000 / 9000 系列，以及 Ryzen 的 780M / 760M、Ryzen AI 300 系列和 Ryzen AI Max 核显，请把显卡驱动更新到最新）。超过 2 GB 时分成 `.7z.001`、`.7z.002`… 几个分卷，需要全部下载。用 7-Zip 解压，双击 `MiliKara.bat`。自带 Python、依赖、ffmpeg 和两个默认模型，不需要联网。
 
 **macOS 离线版**（Apple 芯片，macOS 14.8.5 或更新）：下载 `MiliKara-…-macos-arm64.zip`，解压后第一次在访达里右键点 `MiliKara.command` →“打开”，以后双击即可。
 
-**更新离线版**：关闭 MiliKara 后双击文件夹里的 `更新.bat`（macOS：`更新.command`），只下载有变化的部分（通常约 1 MB），模型、依赖和项目都不用重新下载，出问题可以退回上一版。v1.1.0 之前的旧版（KiraKara）没有这个文件：在 Releases 里下载 `MiliKara-updater-windows.bat`（macOS：`MiliKara-updater-macos.zip`，解压）放进原来的文件夹，双击即可。访问 GitHub 慢时，也可以把程序更新包 `MiliKara-版本-app.zip` 放进文件夹，更新程序会直接用它。
+**更新离线版**：关闭 MiliKara 后双击文件夹里的 `更新.bat`（macOS：`更新.command`），只下载有变化的部分（程序约 1 MB；从 v1.0 更新时还会补上约 32 MB 的字体），模型、依赖和项目都不用重新下载，出问题可以退回上一版。v1.1.0 之前的旧版（KiraKara）没有这个文件：在 Releases 里下载 `MiliKara-updater-windows.bat`（macOS：`MiliKara-updater-macos.zip`，解压）放进原来的文件夹，双击即可。访问 GitHub 慢时，也可以把程序更新包 `MiliKara-版本-app.zip` 放进文件夹，更新程序会直接用它。
 
 离线版都由 GitHub Actions 构建（`.github/workflows/windows-package.yml`、`macos-package.yml`；打包脚本在 `packaging/`）。
 

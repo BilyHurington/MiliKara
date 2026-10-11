@@ -120,7 +120,7 @@ def test_update_an_old_folder_then_roll_back(tmp_path, monkeypatch, started):
 def test_a_program_package_in_the_folder_needs_no_network(tmp_path, monkeypatch, started):
     root = old_folder(tmp_path)
     rel = make_release(tmp_path, "1.1.0") / "download" / "v1.1.0"
-    shutil.copy(rel / "MiliKara-1.1.0-app.zip", root)
+    shutil.copy(next(rel.glob("MiliKara-*-app.zip")), root)  # (named after pyproject's version)
     assert run(root, None, monkeypatch=monkeypatch) == 0
     assert (root / "MiliKara.command").exists()
     assert not (root / "fonts").exists()  # its fonts package was not put there: left for later
@@ -160,7 +160,7 @@ def test_the_windows_variants(tmp_path):
         (site / f"torch-{torch}.dist-info").mkdir()
         assert update.Folder(root).variant() == variant, torch
     rel = make_release(tmp_path, "1.1.0")
-    with zipfile.ZipFile(rel / "download" / "v1.1.0" / "MiliKara-1.1.0-app.zip") as z:
+    with zipfile.ZipFile(next((rel / "download" / "v1.1.0").glob("MiliKara-*-app.zip"))) as z:
         notes = {n: z.read(n).decode("utf-8-sig") for n in z.namelist() if n.startswith("notes/")}
     assert sorted(notes) == ["notes/macos.txt", "notes/windows-cpu.txt", "notes/windows-cuda.txt", "notes/windows-rocm.txt"]
     assert "AMD 显卡版" in notes["notes/windows-rocm.txt"] and "RX 7000" in notes["notes/windows-rocm.txt"]

@@ -1,6 +1,6 @@
 [project]
 name = "milikara"
-version = "1.1.0"
+version = "1.2.0"
 description = "MiliKara: Japanese karaoke videos from a song and its lyrics (mora-level alignment, furigana, burned-in subtitles)"
 readme = "README.md"
 requires-python = ">=3.11"
