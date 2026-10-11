@@ -72,9 +72,9 @@ def prepare(
                                     message=f"后端模型未针对语言「{seg.lang}」训练",
                                     data={"lang": seg.lang}))
             if not seg.units and any(c.isalnum() for c in seg.surface):
-                # e.g. digits (3人) or an unknown word: silently not aligned otherwise
+                # e.g. an unknown word, or a reading removed: silently not aligned otherwise
                 issues.append(Issue(code="segment_no_reading", severity="warning", line_id=lid,
-                                    message=f"片段「{seg.surface}」没有读音，不参与对齐；请补充读音（数字需写出读法）",
+                                    message=f"片段「{seg.surface}」没有读音，不参与对齐；可以在“注音”里点它补上读音",
                                     data={"segment_id": seg.id, "surface": seg.surface}))
             for u in seg.units:
                 units[u.id] = UnitInfo(u.id, lid, seg.id, u.reading, seg.lang)

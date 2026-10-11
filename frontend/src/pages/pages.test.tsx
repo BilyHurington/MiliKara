@@ -224,6 +224,23 @@ describe('interactions', () => {
     await waitFor(() => expect(api.find('POST', '/ai/validate')).toHaveLength(1));
   });
 
+  it('enhance: a word without a reading (digits) can be given one; punctuation stays text', async () => {
+    localStorage.removeItem('kara.enhanceTab');
+    const pv = fixturePV();
+    const line = pv.project.lyrics.lines[0];
+    const seg = (surface: string) => ({ ...line.segments[0], id: `s-${surface}`, surface, reading: null, units: [],
+      reading_source: 'none' as const, uncertain: surface === '3', confirmed: false, candidates: [] });
+    line.text = `3、${line.text}`;
+    line.segments = [seg('3'), seg('、'), ...line.segments];
+    seedStore('enhance', pv);
+    serverLike();
+    renderUI(<EnhancePage />);
+    const digit = await screen.findByRole('button', { name: /^3\s*没有读音/ });
+    expect(screen.queryByRole('button', { name: /^、/ })).toBeNull();
+    await userEvent.click(digit);
+    expect(await screen.findByRole('dialog', { name: /修改读音：3/ })).toBeInTheDocument();
+  });
+
   it('enhance: the three tasks are tabs with their status, and a draft survives switching', async () => {
     localStorage.removeItem('kara.enhanceTab');
     seedStore('enhance');

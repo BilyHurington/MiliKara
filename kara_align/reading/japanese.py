@@ -358,8 +358,13 @@ def _class_segments(text: str) -> list[Segment]:
                                 units=[Unit(reading=r, surface=run)] if r else [],
                                 reading_source="rule" if r else "none"))
         elif kind == "digit":
-            segs.append(Segment(surface=run, reading=None, lang="ja", units=[], uncertain=True,
-                                reading_source="none", note="数字：读音需要人工或 AI 补充"))
+            # the usual reading, to be checked: songs often sing numbers otherwise (よ, ワン, ひとつ …)
+            from .numbers import digits_reading
+
+            reading, alts = digits_reading(run)
+            segs.append(Segment(surface=run, reading=reading, lang="ja", units=reading_units(reading),
+                                reading_source="rule", uncertain=True, candidates=alts,
+                                note="数字：按常见读法注音，请按歌里的唱法确认"))
         elif not _long_after(segs, run):
             _punct(segs, run)
     return segs

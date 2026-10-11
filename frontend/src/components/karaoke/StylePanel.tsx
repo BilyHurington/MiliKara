@@ -273,7 +273,7 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
               <Segmented value={R.script} onChange={(v) => patch((s) => { s.ruby.script = v; })}
                 options={[{ value: 'hiragana', label: '平假名' }, { value: 'katakana', label: '片假名' }, { value: 'romaji', label: '罗马音' }]} />
             </Row>
-            <Row label="标注位置" hint={R.target === 'kanji' ? '只在汉字上方标注，送假名不重复标注' : '所有假名也标注（平假名注音在平假名上会自动省略）'}>
+            <Row label="标注位置" hint={R.target === 'kanji' ? '只在汉字和数字上方标注，送假名不重复标注' : '所有假名也标注（平假名注音在平假名上会自动省略）'}>
               <Segmented value={R.target} onChange={(v) => patch((s) => { s.ruby.target = v; })}
                 options={[{ value: 'kanji', label: '仅汉字' }, { value: 'all', label: '全部' }]} />
             </Row>

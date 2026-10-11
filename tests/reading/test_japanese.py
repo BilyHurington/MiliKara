@@ -43,9 +43,15 @@ def test_rule_segments_kanji_uncertain_and_kana_surface():
     assert kana.units[0].surface == "と"
 
 
-def test_digits_uncertain_no_reading():
+def test_digits_get_the_usual_reading_to_check():
     segs = rule_segments("123回")
-    assert segs[0].surface == "123" and segs[0].uncertain and not segs[0].units
+    s = segs[0]
+    assert (s.surface, s.reading, s.reading_source) == ("123", "ひゃくにじゅうさん", "rule")
+    assert s.uncertain and [u.reading for u in s.units] == ["ひゃ", "く", "に", "じゅ", "う", "さ", "ん"]
+    segs = rule_segments("1、2、3で")
+    assert [(x.surface, x.reading) for x in segs if x.units][:3] == [("1", "いち"), ("2", "に"), ("3", "さん")]
+    assert segs[0].candidates == ["わん", "ひとつ"]  # other ways it is sung: tried when the line fits badly
+    assert rule_segments("２４時")[0].reading == "にじゅうよん"  # full-width digits too
 
 
 def test_latin_in_japanese():

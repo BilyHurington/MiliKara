@@ -96,6 +96,15 @@ def test_chunks_ruby_targets_and_scripts():
     assert all(not c.ruby for c in A.build_chunks(line, _times(line), st, {}))
 
 
+def test_digits_get_ruby_like_kanji():
+    from kara_align.reading.japanese import rule_segments
+
+    line = Line(text="24時間", segments=rule_segments("24時間"))
+    ch = A.build_chunks(line, _times(line), KaraokeStyle(), {})  # 仅汉字: digits too
+    assert [(c.base_text, c.ruby_text) for c in ch] == [("24", "にじゅうよん"), ("時間", "じかん")]
+    assert ch[0].base[0].start == 1000 and ch[0].base[0].end == 2000  # swept over its five units
+
+
 def test_karaoke_tags_follow_unit_times_exactly():
     parts = [A.Part("ま", 1000, 1210), A.Part("ど", 1300, 1400)]
     tags = A._karaoke(parts, 500, "kf")

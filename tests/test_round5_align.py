@@ -258,8 +258,13 @@ def test_untokenizable_units_do_not_trigger_retries():
 
 # --- A-L16 segments without a reading -----------------------------------------------------------
 
-def test_digit_segment_is_reported():
-    prep, _ = _texts("3人で")
+def test_a_segment_without_reading_is_reported():
+    doc = parse_lyrics_text("3人で", mode="plain").doc
+    prepare_doc(doc)
+    seg = doc.lines[0].segments[0]
+    assert (seg.surface, seg.reading) == ("3", "さん")  # digits have the usual reading now
+    seg.units, seg.reading = [], None  # (as when it could not be read)
+    prep = prepare(doc, JaHepburnProfile(), ScriptedBackend().tokenize)
     iss = [i for i in prep.issues if i.code == "segment_no_reading"]
     assert iss and iss[0].data["surface"] == "3"
 

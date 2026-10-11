@@ -288,7 +288,9 @@ def build_chunks(line: Line, times: dict[str, tuple[Optional[int], Optional[int]
                 ends = [e for _, e in t if e is not None]
                 base = [Part(surface, min(starts) if starts else None, max(ends) if ends else None)]
             ruby: list[Part] = []
-            wants = ruby_cfg.enabled and seg.lang == "ja" and (kanji or ruby_cfg.target == "all")
+            # "仅汉字" counts digits as kanji: how 24 is sung is not written either
+            wants = ruby_cfg.enabled and seg.lang == "ja" and (kanji or ruby_cfg.target == "all"
+                                                                or any(c.isdigit() for c in surface))
             if wants:
                 ruby = [Part(_ruby_text(u.reading, ruby_cfg.script, romaji.get(u.id)), s, e)
                         for u, (s, e) in zip(units, t)]

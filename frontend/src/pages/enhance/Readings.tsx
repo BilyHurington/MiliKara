@@ -22,6 +22,9 @@ const SOURCE: Record<Segment['reading_source'], { label: string; chip: string; t
 };
 
 const needsCheck = (s: Segment) => s.uncertain && !s.confirmed;
+/** Words (letters, digits) still without a reading: shown as chips too, so they can be given one;
+ *  punctuation and spaces stay plain text. */
+const readable = (s: Segment) => s.units.length > 0 || /[\p{L}\p{N}]/u.test(s.surface);
 
 export function ReadingsCard() {
   const project = useProject()!;
@@ -133,7 +136,7 @@ export function ReadingsCard() {
 }
 
 function LineRow({ line, index, onEdit }: { line: Line; index: number; onEdit: (s: Segment) => void }) {
-  const noUnits = line.segments.every((s) => s.units.length === 0);
+  const noUnits = line.segments.every((s) => !readable(s));
   return (
     <li className="flex gap-4 px-4 py-3 hover:bg-surface-2/40">
       <span className="tabular w-7 shrink-0 pt-2 text-right text-xs text-subtle">{index}</span>
@@ -142,7 +145,7 @@ function LineRow({ line, index, onEdit }: { line: Line; index: number; onEdit: (
           <div className="pt-1.5 text-sm text-muted">{line.text}<span className="ml-2 text-xs text-warn">（尚无读音，点击“规则注音”）</span></div>
         ) : (
           <div className="flex flex-wrap items-end gap-1.5">
-            {line.segments.map((seg) => (seg.units.length === 0
+            {line.segments.map((seg) => (!readable(seg)
               ? <span key={seg.id} className="px-0.5 pb-1 text-sm text-subtle">{seg.surface}</span>
               : <SegmentChip key={seg.id} seg={seg} onClick={() => onEdit(seg)} />))}
           </div>
@@ -158,7 +161,9 @@ function SegmentChip({ seg, onClick }: { seg: Segment; onClick: () => void }) {
   const warn = needsCheck(seg);
   const tip = [
     `来源：${src.label}`,
+    seg.units.length ? '' : '没有读音：点击填写（不填时这里不参与对齐）',
     seg.confirmed ? '已确认' : warn ? '不确定，建议确认' : '',
+    seg.note,
     seg.candidates.length ? `候选：${seg.candidates.join(' / ')}` : '',
     seg.lang !== 'ja' ? `语言：${seg.lang}` : '',
   ].filter(Boolean).join(' · ');
@@ -174,9 +179,9 @@ function SegmentChip({ seg, onClick }: { seg: Segment; onClick: () => void }) {
       >
         <span className="px-0.5 text-[15px] leading-6 font-medium">{seg.surface}</span>
         <span className="flex justify-center divide-x divide-line-strong/60 border-t border-line/70 pt-0.5">
-          {seg.units.map((u) => (
+          {seg.units.length ? seg.units.map((u) => (
             <span key={u.id} className="px-1 text-[11px] leading-4 text-muted">{u.reading}</span>
-          ))}
+          )) : <span className="px-1 text-[11px] leading-4 font-bold text-warn" aria-label="没有读音">？</span>}
         </span>
         {seg.confirmed && <Lock className="absolute -top-1.5 -right-1.5 size-3.5 rounded-full bg-surface p-0.5 text-ok shadow" />}
         {!seg.confirmed && seg.candidates.length > 0 && (
