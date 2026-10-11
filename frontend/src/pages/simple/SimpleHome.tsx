@@ -398,7 +398,10 @@ function TaskRow({ task: t, ahead, onCalibrate }: { task: PipelineTask; ahead: n
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {t.status === 'succeeded' && t.outputs.video && (
+          {t.status === 'succeeded' && (t.outputs.videos?.length ?? 0) > 1 ? t.outputs.videos!.map((v, i) => (
+            <DownloadLink key={v.filename} href={v.url} filename={v.filename} variant={i ? 'secondary' : 'primary'}
+              icon={<Download className="size-4" />}>下载{v.label}</DownloadLink>
+          )) : t.status === 'succeeded' && t.outputs.video && (
             <DownloadLink href={t.outputs.video.url} filename={t.outputs.video.filename} icon={<Download className="size-4" />}>下载视频</DownloadLink>
           )}
           {t.project_deleted && <Badge tone="neutral">项目已删除</Badge>}

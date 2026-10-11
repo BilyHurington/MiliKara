@@ -20,7 +20,7 @@ const SETTINGS: AppSettings = {
   ai: { enabled: false, provider: 'manual', model: '', base_url: 'https://api.openai.com/v1', api_key_env: 'OPENAI_API_KEY', timeout_s: 600, has_api_key: false, env_key_present: false },
   simple: {
     default_mode: 'lrc', separate: true, separation_preset: 'melband-roformer', separation_device: 'auto', calibration: 'manual',
-    karaoke: STYLE, auto_export: true, video_audio: 'original',
+    karaoke: STYLE, auto_export: true, video_audio: ['original'],
     vocal_keep_pct: 20, quality: 'standard',
     task_style: { source: 'default', template: 'glow', color: '#FF8A1E', secondary: '', saved_id: '', translation: null, song_info: null, ruby: 'style', video_audio: null },
   },
@@ -99,10 +99,13 @@ describe('simple mode home', () => {
     await userEvent.click(screen.getByRole('radio', { name: '无' }));
     expect(screen.queryByRole('switch', { name: '仅汉字' })).toBeNull();
     await userEvent.click(screen.getByRole('radio', { name: '罗马音' }));
-    // video sound: "reduce vocals" needs separation (on in these settings) and shows its own level
-    expect(screen.getByRole('radio', { name: '降低人声' })).toBeEnabled();
+    // video sound: several at once, one video each; "reduce vocals" needs separation (on in these
+    // settings) and shows its own level
+    expect(screen.getByRole('button', { name: '原唱', pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '降低人声', pressed: false })).toBeEnabled();
     expect(screen.queryByRole('textbox', { name: '人声保留（输入数值）' })).toBeNull();
-    await userEvent.click(screen.getByRole('radio', { name: '降低人声' }));
+    await userEvent.click(screen.getByRole('button', { name: '降低人声' }));
+    expect(screen.getByText('每种声音各生成一个视频')).toBeInTheDocument();
     const level = screen.getByRole('textbox', { name: '人声保留（输入数值）' });
     expect(level).toHaveValue('20');
     await userEvent.click(level);
@@ -111,7 +114,7 @@ describe('simple mode home', () => {
     await waitFor(() => expect(api.find('POST', '/api/karaoke/theme').at(-1)?.body).toEqual({ template: 'glow', color: '#2F80ED', secondary: '#ED35B3' }));
     expect(screen.getByRole('img', { name: '字幕示意' })).toBeInTheDocument();
     const want = { source: 'template', template: 'glow', color: '#2F80ED', secondary: '#ED35B3', saved_id: '', translation: null, song_info: true,
-      ruby: 'romaji', ruby_target: 'kanji', video_audio: 'mix', vocal_keep_pct: 35, effects: null,
+      ruby: 'romaji', ruby_target: 'kanji', video_audio: ['original', 'mix'], vocal_keep_pct: 35, effects: null,
       countdown_intro: null, countdown_interlude: null };
     // remembered right away (the next song starts from the same choices)
     await waitFor(() => expect(api.find('PUT', '/api/settings').at(-1)?.body).toEqual({ simple: { task_style: want } }), { timeout: 2000 });
@@ -163,6 +166,18 @@ describe('simple mode home', () => {
 });
 
 describe('a long task list', () => {
+  it('a task that made several videos has a download for each sound', async () => {
+    const v = (label: string, name: string) => ({ label, filename: name, url: `/api/projects/p/exports/${name}`, version: 'original' as const });
+    const done = task({ id: 't1', status: 'succeeded', progress: 1, stages: stages(7), project_id: 'p',
+      outputs: { video: v('原唱', 'a-karaoke.mp4'), videos: [v('原唱', 'a-karaoke.mp4'), v('伴唱', 'a-karaoke-vocal0.mp4')] } });
+    mockApi({ 'GET /api/tasks': () => [done] });
+    await act(async () => { await loadTasks(); });
+    renderUI(<SimpleHome />);
+    expect(await screen.findByRole('link', { name: /下载原唱/ })).toHaveAttribute('href', '/api/projects/p/exports/a-karaoke.mp4');
+    expect(screen.getByRole('link', { name: /下载伴唱/ })).toHaveAttribute('href', '/api/projects/p/exports/a-karaoke-vocal0.mp4');
+    expect(screen.queryByRole('link', { name: /下载视频/ })).toBeNull();
+  });
+
   it('shows the newest five with their steps folded; older ones on request', async () => {
     seed();
     const done = Array.from({ length: 7 }, (_, i) => task({ id: `t${i}`, name: `歌 ${i}`, status: 'succeeded', project_id: `p${i}`, stages: stages(7),
@@ -226,7 +241,7 @@ describe('simple mode settings', () => {
     expect(screen.queryByText(/每首歌在“制作”页第 4 步选择/)).toBeNull();
     await userEvent.click(screen.getByRole('tab', { name: '输出视频' }));
     expect(screen.queryByPlaceholderText('sk-…')).toBeNull();
-    expect(screen.queryByRole('radio', { name: /降低人声/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /降低人声/ })).toBeNull();
     expect(screen.getByText(/每首歌在“制作”页第 4 步选择/)).toBeInTheDocument();
     // the category is remembered
     cleanupRender();

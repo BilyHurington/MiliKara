@@ -48,7 +48,7 @@ describe('detailed mode ↔ simple-mode tasks', () => {
     const style = { ...plainStyle(), preset: '' };
     const settings = { version: 1, ai: {} as AppSettings['ai'], simple: { karaoke: defaultStyle(), task_style: {
       source: 'template', template: 'glow', color: '#FF8A1E', secondary: '#F5C400', saved_id: '', translation: true, song_info: true,
-      ruby: 'hiragana', ruby_target: 'kanji', video_audio: 'mix', vocal_keep_pct: 35 } } } as unknown as AppSettings;
+      ruby: 'hiragana', ruby_target: 'kanji', video_audio: ['mix'], vocal_keep_pct: 35 } } } as unknown as AppSettings;
     useSimple.setState({ settings });
     const api = mockApi({ 'PUT /api/settings': (c) => ({ ...settings, simple: { ...settings.simple, ...c.body.simple } }) });
     await setSimpleDefault(style);
@@ -136,7 +136,7 @@ describe('cleaning up', () => {
     useLibrary.setState({ saved: [builtinSaved()] });
     mockApi({});
     const onChange = vi.fn();
-    const simple = { karaoke: defaultStyle(), auto_export: true, separate: true, video_audio: 'original', vocal_keep_pct: 20 } as unknown as AppSettings['simple'];
+    const simple = { karaoke: defaultStyle(), auto_export: true, separate: true, video_audio: ['original'], vocal_keep_pct: 20 } as unknown as AppSettings['simple'];
     renderUI(<TaskStyleStep value={{ source: 'saved', template: 'glow', color: '#FF8A1E', secondary: '', saved_id: 'st_gone', translation: null,
       song_info: null, ruby: 'style', video_audio: null }} onChange={onChange} settings={simple} />);
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ saved_id: '' })));

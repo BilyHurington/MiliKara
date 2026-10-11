@@ -36,10 +36,12 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
+from . import audio_versions
 from . import service as S
 from . import settings as app_settings
+from .audio_versions import AudioVersion
 from .interfaces import CancelToken, Cancelled
 from .models import KaraokeStyle, _Base, new_id, utcnow
 from .project.jobs import run_heavy
@@ -106,9 +108,14 @@ class TaskVideo(_Base):
     """The video settings of one task, fixed when it is added."""
 
     auto_export: bool = True
-    video_audio: Literal["original", "mix", "none"] = "original"
+    video_audio: list[AudioVersion] = Field(default_factory=lambda: ["original"])  # one video each
     vocal_keep_pct: float = 20.0
     quality: Literal["standard", "high"] = "standard"
+
+    @field_validator("video_audio", mode="before")
+    @classmethod
+    def _audio_versions(cls, v: Any) -> Any:  # (one string in tasks from before v1.2.0)
+        return audio_versions.normalize(v)
 
 
 class TaskProcessing(_Base):
@@ -1234,18 +1241,16 @@ def stage_export(q, task, cfg, cancel, progress):
         progress(0.0, "对齐结果已过期，重新对齐")
         _warn(task, "歌词或读音在对齐后有变化，已重新对齐后再生成视频")
         _align(q, task, h, cancel, lambda f, m="": progress(0.0, m))
-    audio = video.video_audio
-    if audio == "mix" and not S.stems_current(h.project):
-        _warn(task, "没有人声分轨，视频使用原声")
-        audio = "original"
-    out = run_heavy(lambda: S.karaoke_burn(h, background="auto", audio=audio, quality=video.quality,
-                                           vocal_keep_pct=video.vocal_keep_pct,
-                                           cancel=cancel, progress=progress),
+    out = run_heavy(lambda: S.karaoke_burn_versions(h, video.video_audio, background="auto", quality=video.quality,
+                                                    vocal_keep_pct=video.vocal_keep_pct,
+                                                    cancel=cancel, progress=progress),
                     lambda m: progress(0.0, m), cancel, holder=_holder(task, "生成视频"))
     for w in out.get("warnings") or []:
-        if "停顿" in w:
+        if "停顿" in w or "人声分轨" in w:
             _warn(task, w)
-    task.outputs["video"] = {"filename": out["filename"], "url": export_url(h.project.id, out["filename"])}
+    videos = [{**v, "url": export_url(h.project.id, v["filename"])} for v in out["videos"]]
+    task.outputs["video"] = videos[0]  # (the one download button of tasks from before several versions)
+    task.outputs["videos"] = videos
     return "done"
 
 

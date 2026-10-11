@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { fmtMs, fmtRelative, parseTime } from '@/lib/format';
 import { isEnter, isEscape } from '@/lib/keys';
-import type { FontFamily, Job, KaraokeStyle, PictureInfo, ProjectView, SongInfo } from '@/lib/types';
+import type { AudioVersion, BurnedVideo, FontFamily, Job, KaraokeStyle, PictureInfo, ProjectView, SongInfo } from '@/lib/types';
 import { player } from '@/audio/player';
 import { revealOnWaveform } from '@/audio/waveformRef';
 import {
@@ -15,7 +15,7 @@ import {
 import { DownloadButton } from '@/components/DownloadButton';
 import { RecentExports } from '@/components/RecentExports';
 import {
-  Badge, Button, Callout, Card, CardBody, CardHeader, EmptyState, Input, PageHeader, Progress, Segmented, Select, SliderField, Tip,
+  Badge, Button, Callout, Card, CardBody, CardHeader, EmptyState, Input, MultiToggle, PageHeader, Progress, Segmented, Select, SliderField, Tip,
 } from '@/components/ui';
 import { StylePanel } from '@/components/karaoke/StylePanel';
 import { BACKGROUND_ACCEPT } from '@/pages/input/AudioCard';
@@ -459,20 +459,24 @@ function BurnCard({ style, patch, beforeBurn }: {
   const pic = usePicture();
   const job = useJob('burn');
   const [background, setBackground] = useState<'auto' | 'black'>('auto');
-  const [audio, setAudio] = useState<'original' | 'mix' | 'none'>('original');
+  const [audios, setAudios] = useState<AudioVersion[]>(['original']);
   const [quality, setQuality] = useState<'standard' | 'high'>('standard');
   // the latest finished video of this project (kept after leaving the page)
-  const out = job?.status === 'succeeded' && job.output ? job.output as { url: string; filename: string; warnings: string[] } : null;
+  const out = job?.status === 'succeeded' && job.output
+    ? job.output as { url: string; filename: string; warnings: string[]; videos?: BurnedVideo[] } : null;
+  // one video each sound (a job from before several versions: the one it made)
+  const videos: { url: string; filename: string; label?: string }[] = out ? (out.videos ?? [out]) : [];
   const canMix = !!view?.audio.vocals?.available && !!view?.audio.instrumental?.available;
   const stemsOutdated = !!(view?.audio.vocals?.outdated || view?.audio.instrumental?.outdated);
+  const noStems = stemsOutdated ? '分轨来自更换前的原曲：请先重新分离' : '需要先分离人声';
   const running = job && (job.status === 'queued' || job.status === 'running');
   const vocalPct = style.output?.vocal_keep_pct ?? 20;
   const setVocalPct = (v: number) => patch((s) => { s.output = { ...s.output, vocal_keep_pct: v }; });
 
   const start = () => run(async () => {
     await beforeBurn();  // the burn uses the saved style: save the latest edit first
-    const j = await api.post<Job>(ppath('/karaoke/burn'), { background, audio, quality, vocal_keep_pct: vocalPct });
-    trackJob(j, { label: '生成视频（烧录字幕）' });
+    const j = await api.post<Job>(ppath('/karaoke/burn'), { background, audios, quality, vocal_keep_pct: vocalPct });
+    trackJob(j, { label: audios.length > 1 ? `生成 ${audios.length} 个视频（烧录字幕）` : '生成视频（烧录字幕）' });
   }, '无法开始生成视频');
 
   return (
@@ -497,23 +501,24 @@ function BurnCard({ style, patch, beforeBurn }: {
           </div>
           <div className="space-y-1.5">
             <div className="text-[13px] font-medium">音频</div>
-            <Segmented size="sm" label="音频" value={audio} onChange={setAudio} options={[
-              { value: 'original', label: '原声' },
-              { value: 'mix', label: '降低人声', disabled: !canMix,
-                title: canMix ? undefined : stemsOutdated ? '分轨来自更换前的原曲：请先重新分离' : '需要先分离人声' },
-              { value: 'none', label: '无' },
+            <MultiToggle<AudioVersion> size="sm" label="音频" value={audios} onChange={setAudios} options={[
+              { value: 'original', label: '原唱' },
+              { value: 'instrumental', label: '伴唱', disabled: !canMix, title: canMix ? '去掉人声' : noStems },
+              { value: 'mix', label: '降低人声', disabled: !canMix, title: canMix ? undefined : noStems },
+              { value: 'none', label: '无声' },
             ]} />
+            <div className="text-xs text-subtle">可以多选：每种声音各生成一个视频</div>
           </div>
           <div className="space-y-1.5">
             <div className="text-[13px] font-medium">画质</div>
             <Segmented size="sm" label="画质" value={quality} onChange={setQuality} options={[{ value: 'standard', label: '标准（较快）' }, { value: 'high', label: '高' }]} />
           </div>
-          {audio === 'mix' && canMix && (
+          {audios.includes('mix') && canMix && (
             <div className="space-y-1.5 md:col-span-3">
               <div className="text-[13px] font-medium">人声保留</div>
               <SliderField name="人声保留" value={vocalPct} onChange={setVocalPct} min={0} max={100} step={1} unit="%"
                 trackClassName="min-w-40" />
-              <div className="text-xs text-subtle">0% 为纯伴奏；伴奏保持 100%。只用于这里的烧录，不影响“导出”页的混音。</div>
+              <div className="text-xs text-subtle">降低人声时保留多少人声（伴唱是完全去掉人声）；伴奏保持 100%。只用于这里的烧录，不影响“导出”页的混音。</div>
             </div>
           )}
         </div>
@@ -529,9 +534,20 @@ function BurnCard({ style, patch, beforeBurn }: {
         </div>
         {job?.status === 'failed' && <Callout tone="danger" title="生成视频失败">{job.error ?? job.message}</Callout>}
         {out && (
-          <Callout tone="ok" title={out.filename}
-            actions={<DownloadButton href={out.url} big filename={out.filename} size="sm" variant="primary" icon={<Download className="size-4" />}>下载视频</DownloadButton>}>
+          <Callout tone="ok" title={videos.length > 1 ? `已生成 ${videos.length} 个视频` : out.filename}
+            actions={videos.length === 1 ? <DownloadButton href={out.url} big filename={out.filename} size="sm" variant="primary" icon={<Download className="size-4" />}>下载视频</DownloadButton> : undefined}>
             {out.warnings.length ? out.warnings.join('；') : `生成完成（${fmtRelative(job!.finished ?? job!.created)}）。`}
+            {videos.length > 1 && (
+              <ul className="mt-2 space-y-1.5">
+                {videos.map((v, i) => (
+                  <li key={v.filename} className="flex flex-wrap items-center gap-2">
+                    <DownloadButton href={v.url} big filename={v.filename} size="xs" variant={i ? 'secondary' : 'primary'}
+                      icon={<Download className="size-3.5" />}>下载{v.label}</DownloadButton>
+                    <span className="min-w-0 truncate text-xs text-muted">{v.filename}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Callout>
         )}
         <p className="text-xs text-subtle">生成视频耗时约为歌曲时长的 0.3–1 倍，可以离开本页，操作在后台继续（右上角可查看进度或取消）；完成后回到这里也能下载。</p>

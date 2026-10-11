@@ -6,7 +6,7 @@ import * as RSlider from '@radix-ui/react-slider';
 import * as RSwitch from '@radix-ui/react-switch';
 import * as RTabs from '@radix-ui/react-tabs';
 import * as RTooltip from '@radix-ui/react-tooltip';
-import { AlertTriangle, CheckCircle2, Info, Loader2, UploadCloud, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, Info, Loader2, UploadCloud, X, XCircle } from 'lucide-react';
 import {
   forwardRef, useEffect, useId, useRef, useState,
   type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes,
@@ -464,6 +464,42 @@ export function Segmented<T extends string>({ value, onChange, options, size = '
           {o.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** Several choices at once, in the look of Segmented; the last one chosen cannot be taken off. */
+export function MultiToggle<T extends string>({ value, onChange, options, size = 'md', className, label }: {
+  value: T[]; onChange: (v: T[]) => void; options: { value: T; label: ReactNode; disabled?: boolean; title?: string }[];
+  size?: 'sm' | 'md'; className?: string; /** accessible name of the group */ label?: string;
+}) {
+  const toggle = (v: T) => {
+    const next = value.includes(v) ? value.filter((x) => x !== v) : [...value, v];
+    if (next.length) onChange(options.map((o) => o.value).filter((x) => next.includes(x)));
+  };
+  return (
+    <div className={cn('inline-flex rounded-lg bg-surface-2 p-0.5 ring-1 ring-line', className)} role="group" aria-label={label}>
+      {options.map((o) => {
+        const on = value.includes(o.value);
+        return (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={on}
+            disabled={o.disabled}
+            title={o.title}
+            onClick={() => toggle(o.value)}
+            className={cn(
+              'focus-ring inline-flex items-center gap-1 rounded-md font-medium whitespace-nowrap transition disabled:opacity-40',
+              size === 'sm' ? 'h-6 px-2 text-xs' : 'h-8 px-3 text-[13px]',
+              on ? 'bg-surface text-fg shadow-sm ring-1 ring-line' : 'text-muted hover:text-fg',
+            )}
+          >
+            {on && <Check className={size === 'sm' ? 'size-3' : 'size-3.5'} aria-hidden />}
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -1114,19 +1114,25 @@ def create_app(root: Optional[Path] = None, jobs: Optional[JobManager] = None,
         not_busy(pid)
         if h.project.result() is None:
             raise HTTPException(400, "还没有对齐结果：请先完成对齐")
-        audio = body.get("audio", "original")
-        if audio not in ("original", "mix", "none"):
-            raise HTTPException(400, "audio 只能是 original / mix / none")
+        # "audios": several versions, one video each (audio_versions); "audio": one, as before v1.2.0
+        from .. import audio_versions
+
+        try:
+            versions = audio_versions.normalize(body.get("audios", body.get("audio", "original")))
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
         pct = body.get("vocal_keep_pct")
         if pct is not None and (not isinstance(pct, (int, float)) or not 0 <= pct <= 100):
             raise HTTPException(400, "vocal_keep_pct 必须是 0–100 之间的数字")
 
         def run(job: Job):
-            out = S.karaoke_burn(h, background=body.get("background", "auto"), audio=audio,
-                                 quality=body.get("quality", "standard"), vocal_keep_pct=pct,
-                                 cancel=job.cancel_token,
-                                 progress=progress_setter(job))
-            return {"filename": out["filename"], "warnings": out["warnings"], "url": download_url(pid, out["filename"])}
+            out = S.karaoke_burn_versions(h, versions, background=body.get("background", "auto"),
+                                          quality=body.get("quality", "standard"), vocal_keep_pct=pct,
+                                          cancel=job.cancel_token, progress=progress_setter(job))
+            videos = [{**v, "url": download_url(pid, v["filename"])} for v in out["videos"]]
+            # (the first one also as before: filename / url)
+            return {"filename": videos[0]["filename"], "url": videos[0]["url"], "videos": videos,
+                    "warnings": out["warnings"]}
 
         return jm.submit("burn", run, project_id=pid).to_dict()
 

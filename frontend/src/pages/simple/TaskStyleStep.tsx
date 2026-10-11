@@ -7,10 +7,10 @@ import { Plus, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { COUNTDOWN_DEFAULTS } from '@/lib/countdown';
-import type { AppSettings, EffectKind, KaraokeStyle, TaskStyleOptions, ThemePreview } from '@/lib/types';
+import type { AppSettings, AudioVersion, EffectKind, KaraokeStyle, TaskStyleOptions, ThemePreview } from '@/lib/types';
 import { useApp } from '@/store/app';
 import { loadSavedStyles, useLibrary } from '@/store/styles';
-import { Segmented, Select, SliderField, Switch } from '@/components/ui';
+import { MultiToggle, Segmented, Select, SliderField, Switch } from '@/components/ui';
 import { ColorRow } from '@/components/karaoke/ThemeColors';
 import { EFFECTS } from '@/components/karaoke/StylePanel';
 
@@ -31,6 +31,7 @@ export function TaskStyleStep({ value: o, onChange, settings }: {
   // “降低人声” needs the separation: switched on in the settings and installed on this computer
   const sepInstalled = useApp((s) => s.info?.separation_available ?? true);
   const canSeparate = settings.separate && sepInstalled;
+  const noStems = !sepInstalled ? '这台电脑没有安装人声分离组件' : '需要在设置里开启人声分离';
   const themeSeq = useRef(0);
 
   useEffect(() => { if (!saved) void loadSavedStyles().catch(() => undefined); }, [saved]);
@@ -62,7 +63,8 @@ export function TaskStyleStep({ value: o, onChange, settings }: {
   const cdBase = base?.countdown ?? COUNTDOWN_DEFAULTS;
   const cdIntro = o.countdown_intro ?? cdBase.intro;
   const cdInterlude = o.countdown_interlude ?? cdBase.interlude;
-  const audio = o.video_audio ?? settings.video_audio;
+  const audio: AudioVersion[] = o.video_audio ?? settings.video_audio;
+  const stemsWanted = audio.some((a) => a === 'instrumental' || a === 'mix');
   const vocal = o.vocal_keep_pct ?? settings.vocal_keep_pct;
   const shown = useMemo(() => base && {
     ...base,
@@ -155,23 +157,24 @@ export function TaskStyleStep({ value: o, onChange, settings }: {
               <div className="space-y-2 text-[13px]">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   <span className="w-14 shrink-0 text-muted">视频声音</span>
-                  <Segmented<'original' | 'mix' | 'none'> size="sm" label="视频声音" value={audio} onChange={(v) => set({ video_audio: v })} options={[
-                    { value: 'original', label: '原声' },
-                    { value: 'mix', label: '降低人声', disabled: !canSeparate,
-                      title: canSeparate ? undefined : !sepInstalled ? '这台电脑没有安装人声分离组件' : '需要在设置里开启人声分离' },
+                  <MultiToggle<AudioVersion> size="sm" label="视频声音" value={audio} onChange={(v) => set({ video_audio: v })} options={[
+                    { value: 'original', label: '原唱' },
+                    { value: 'instrumental', label: '伴唱', disabled: !canSeparate, title: canSeparate ? '去掉人声' : noStems },
+                    { value: 'mix', label: '降低人声', disabled: !canSeparate, title: canSeparate ? undefined : noStems },
                     { value: 'none', label: '无声' },
                   ]} />
+                  {audio.length > 1 && <span className="text-xs text-subtle">每种声音各生成一个视频</span>}
                 </div>
-                {audio === 'mix' && !canSeparate && (
+                {stemsWanted && !canSeparate && (
                   <p className="pl-[4.5rem] text-xs text-warn">
-                    {!sepInstalled ? '这台电脑没有安装人声分离组件，视频会使用原声。' : '人声分离已在设置里关闭，视频会使用原声。'}
+                    {!sepInstalled ? '这台电脑没有安装人声分离组件' : '人声分离已在设置里关闭'}，伴唱和降低人声的视频不会生成{audio.every((a) => a === 'instrumental' || a === 'mix') ? '（改用原声）' : ''}。
                   </p>
                 )}
-                {audio === 'mix' && canSeparate && (
+                {audio.includes('mix') && canSeparate && (
                   <div className="max-w-md pl-[4.5rem]">
                     <SliderField name="人声保留" label={<span className="text-muted">人声保留</span>} value={vocal}
                       onChange={(v) => set({ vocal_keep_pct: v })} min={0} max={100} step={1} unit="%" trackClassName="min-w-32" />
-                    <p className="mt-1 text-xs text-subtle">0% 为纯伴奏；需要人声分离（设置里开启）。</p>
+                    <p className="mt-1 text-xs text-subtle">降低人声时保留多少人声（伴唱是完全去掉人声）。</p>
                   </div>
                 )}
               </div>

@@ -401,6 +401,42 @@ def test_burn_reduced_vocals_uses_its_own_level(tmp_path, monkeypatch):
         S.karaoke_burn(h, background="black", audio="mix", vocal_keep_pct=150)
 
 
+def test_several_videos_with_different_sound(tmp_path, monkeypatch):
+    """原唱 + 伴唱 + 人声 30% + 无声 at once (the simple mode's step 4, the karaoke page)."""
+    import kara_align.karaoke.render as R
+
+    h = _project(tmp_path)
+    made = []
+
+    def fake_burn(text, out, size, duration_ms, *, audio=None, use_video_audio=False, **kw):
+        made.append(audio is not None or use_video_audio)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"x")
+
+    monkeypatch.setattr(R, "burn", fake_burn)
+    # no stems yet: the versions that need them are left out, said so; nothing left: the original sound
+    out = S.karaoke_burn_versions(h, ["instrumental", "mix"], background="black", vocal_keep_pct=30)
+    assert [v["label"] for v in out["videos"]] == ["原唱"] and "没有人声分轨" in out["warnings"][0]
+    out = S.karaoke_burn_versions(h, ["none", "original", "instrumental"], background="black")
+    assert [v["label"] for v in out["videos"]] == ["原唱", "无声"] and "伴唱" in out["warnings"][0]
+    x = (np.random.default_rng(1).standard_normal(22050 * 7) * 0.05).astype(np.float32)
+    for role in ("vocals", "instrumental"):
+        sf.write(tmp_path / f"{role}.wav", x, 22050)
+        S.add_audio(h, tmp_path / f"{role}.wav", role)
+    made.clear()
+    out = S.karaoke_burn_versions(h, ["none", "mix", "instrumental", "original"], background="black", vocal_keep_pct=30)
+    vids = out["videos"]
+    assert [v["label"] for v in vids] == ["原唱", "伴唱", "人声 30%", "无声"] and not out["warnings"]
+    assert [re.sub(r"-\d{8}-\d{6}(-\d+)?\.mp4$", "", v["filename"]) for v in vids] == [
+        "k-karaoke", "k-karaoke-vocal0", "k-karaoke-vocal30", "k-karaoke-noaudio"]
+    assert made == [True, True, True, False]  # sound, sound, sound, none
+    assert all((h.dir / "exports" / v["filename"]).exists() for v in vids)
+    # 人声 0% is the 伴唱: made once
+    assert len(S.karaoke_burn_versions(h, ["instrumental", "mix"], background="black", vocal_keep_pct=0)["videos"]) == 1
+    with pytest.raises(S.ServiceError):
+        S.karaoke_burn_versions(h, [], background="black")
+
+
 def _dialogue_times(text, style_name="KMain"):
     return [l.split(",")[1:3] for l in text.splitlines() if l.startswith("Dialogue") and f",{style_name}," in l]
 
@@ -835,3 +871,36 @@ def test_brackets_taken_for_a_reading_can_be_shown_again(tmp_path):
     assert sung.hidden
     S.set_segment_hidden(h, ln.id, sung.id, False)
     assert not sung.hidden
+
+
+def test_several_videos_over_the_api(tmp_path, monkeypatch):
+    import time
+
+    from fastapi.testclient import TestClient
+
+    import kara_align.karaoke.render as R
+    from kara_align.web.server import create_app
+
+    monkeypatch.setenv("KARA_ALIGN_HOME", str(tmp_path / "home"))
+    h = _project(tmp_path)
+    monkeypatch.setattr(R, "burn", lambda text, out, *a, **kw: (out.parent.mkdir(parents=True, exist_ok=True), out.write_bytes(b"x")))
+    (tmp_path / "projects").mkdir()
+    shutil.move(str(h.dir), tmp_path / "projects" / h.project.id)  # (the WebUI finds a project by its id)
+    c = TestClient(create_app(tmp_path / "projects"))
+    url = f"/api/projects/{h.project.id}/karaoke/burn"
+    assert c.post(url, json={"audios": []}).status_code == 400
+    assert c.post(url, json={"audios": ["karaoke"]}).status_code == 400
+
+    def done(body):
+        job = c.post(url, json={"background": "black", **body}).json()
+        deadline = time.time() + 20
+        while job["status"] not in ("succeeded", "failed") and time.time() < deadline:
+            time.sleep(0.05)
+            job = c.get(f"/api/jobs/{job['id']}").json()
+        assert job["status"] == "succeeded", job
+        return job["output"]
+
+    out = done({"audios": ["none", "original"]})
+    assert [v["label"] for v in out["videos"]] == ["原唱", "无声"] and out["filename"] == out["videos"][0]["filename"]
+    assert all(v["url"].endswith(v["filename"]) for v in out["videos"])
+    assert [v["label"] for v in done({"audio": "none"})["videos"]] == ["无声"]  # one, as before v1.2.0

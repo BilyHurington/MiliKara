@@ -537,7 +537,7 @@ describe('karaoke subtitles page', () => {
     renderUI(<KaraokePage />);
     await userEvent.click(await screen.findByRole('button', { name: /一键烧录/ }));
     await waitFor(() => expect(api.calls.some((c) => c.url.endsWith('/karaoke/burn'))).toBe(true));
-    expect(api.calls.find((c) => c.url.endsWith('/karaoke/burn'))!.body).toEqual({ background: 'auto', audio: 'original', quality: 'standard', vocal_keep_pct: 20 });
+    expect(api.calls.find((c) => c.url.endsWith('/karaoke/burn'))!.body).toEqual({ background: 'auto', audios: ['original'], quality: 'standard', vocal_keep_pct: 20 });
   });
 
   it('reduced vocals shows its own level control and burns with it', async () => {
@@ -550,8 +550,9 @@ describe('karaoke subtitles page', () => {
     await screen.findByRole('button', { name: /一键烧录/ });
     expect(screen.queryByRole('textbox', { name: '人声保留（输入数值）' })).toBeNull();
     // the option no longer shows the Export page's mix level
-    const mix = screen.getByRole('radio', { name: '降低人声' });
-    await userEvent.click(mix);
+    const mix = screen.getByRole('button', { name: '降低人声', pressed: false });
+    await userEvent.click(mix);  // with 原唱: two videos
+    expect(screen.getByRole('button', { name: '原唱', pressed: true })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '人声保留（输入数值）' })).toHaveValue('20');
     await waitFor(() => expect(api.calls.filter((c) => c.url.endsWith('/karaoke/preview')).length).toBeGreaterThan(0), { timeout: 2000 });
     const previews = api.calls.filter((c) => c.url.endsWith('/karaoke/preview')).length;
@@ -565,6 +566,6 @@ describe('karaoke subtitles page', () => {
     expect(api.calls.filter((c) => c.url.endsWith('/karaoke/preview')).length).toBe(previews);
     await userEvent.click(screen.getByRole('button', { name: /一键烧录/ }));
     await waitFor(() => expect(api.calls.some((c) => c.url.endsWith('/karaoke/burn'))).toBe(true));
-    expect(api.calls.find((c) => c.url.endsWith('/karaoke/burn'))!.body).toMatchObject({ audio: 'mix', vocal_keep_pct: 35 });
+    expect(api.calls.find((c) => c.url.endsWith('/karaoke/burn'))!.body).toMatchObject({ audios: ['original', 'mix'], vocal_keep_pct: 35 });
   });
 });

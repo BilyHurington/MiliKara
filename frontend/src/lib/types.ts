@@ -463,7 +463,8 @@ export interface AppSettings {
     separation_device: 'auto' | 'cpu'; karaoke: KaraokeStyle; auto_export: boolean;
     /** LRC offset of new tasks: mark the first line by hand, or detect it after separation */
     calibration: 'manual' | 'auto';
-    video_audio: 'original' | 'mix' | 'none'; vocal_keep_pct: number; quality: 'standard' | 'high';
+    /** the sound of the videos, one video each */
+    video_audio: AudioVersion[]; vocal_keep_pct: number; quality: 'standard' | 'high';
     /** last choices of the new-task form (step 4) */
     task_style: TaskStyleOptions;
   };
@@ -488,8 +489,8 @@ export interface TaskStyleOptions {
   /** countdown dots before the first line / after a long pause; null: as the chosen style says */
   countdown_intro?: boolean | null;
   countdown_interlude?: boolean | null;
-  /** null: the settings' choice */
-  video_audio: 'original' | 'mix' | 'none' | null;
+  /** one video each; null: the settings' choice */
+  video_audio: AudioVersion[] | null;
   /** vocals kept with "mix"; null: the settings' level */
   vocal_keep_pct?: number | null;
 }
@@ -538,7 +539,9 @@ export interface PipelineTask {
   background_filename?: string;
   lyrics_kind: 'link' | 'text'; lyrics_input: string; status: TaskStatus; project_id: string | null;
   stages: PipelineStage[]; progress: number; message: string; error: string | null; detail: string | null;
-  warnings: string[]; outputs: { video?: { filename: string; url: string } };
+  warnings: string[];
+  /** video: the first one (all a task made before several versions); videos: one per sound */
+  outputs: { video?: { filename: string; url: string }; videos?: BurnedVideo[] };
   calibration?: CalibrationRequest | null; calibration_confirmed?: boolean;
   /** AI readings by hand: waiting for the web chat's reply (the prompt: GET /api/tasks/{id}/readings/prompt) */
   readings_request?: { roundtrip_id: string; snapshot_id: string; lines: number; chars: number } | null;
@@ -547,8 +550,12 @@ export interface PipelineTask {
   project_deleted?: boolean;
   /** the subtitle style and video settings bound to this task */
   style_label?: string; style_colors?: string[];
-  video?: { auto_export: boolean; video_audio: 'original' | 'mix' | 'none'; vocal_keep_pct: number; quality: 'standard' | 'high' } | null;
+  video?: { auto_export: boolean; video_audio: AudioVersion[]; vocal_keep_pct: number; quality: 'standard' | 'high' } | null;
 }
+
+/** The sound of a karaoke video: 原唱, 伴唱 (vocals removed), 人声 n% (lowered), 无声 — one video each. */
+export type AudioVersion = 'original' | 'instrumental' | 'mix' | 'none';
+export interface BurnedVideo { filename: string; url: string; label: string; version: AudioVersion }
 
 /** GET /api/update: a newer version? (``enabled`` false: the check is off in the settings) */
 export interface UpdateInfo {

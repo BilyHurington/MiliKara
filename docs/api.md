@@ -23,7 +23,7 @@ curl -F file=@song.mp3 -F background=@cover.jpg \
 
 返回的 `PipelineTask` 里有任务 `id`。
 
-**2. 查看进度**：`GET /api/tasks` 返回所有任务（新的在前）。`status` 为 `preparing` / `queued` / `running` 时继续等待；`succeeded` 时 `outputs.video.url` 就是成品视频的下载地址；`failed` 时看 `error`。
+**2. 查看进度**：`GET /api/tasks` 返回所有任务（新的在前）。`status` 为 `preparing` / `queued` / `running` 时继续等待；`succeeded` 时 `outputs.video.url` 就是成品视频的下载地址（选了几种视频声音时，`outputs.videos` 列出每个版本：`{filename, url, label, version}`，`outputs.video` 是第一个）；`failed` 时看 `error`。
 
 **3. 任务在等你（`status` 为 `waiting`）**：看哪个步骤的 `status` 是 `waiting`。
 
@@ -285,7 +285,7 @@ Warnings say when the result is stale or partial and how many lines were skipped
 | GET | `/api/projects/{pid}/singers/markers` | – | `{lines: [{line_id, text, prefix, names, everyone}], names, existing}`: lines that start with singer names (“A：”, “（XX）”, “【XX】”; a name must start at least two lines) |
 | POST | `/api/projects/{pid}/singers/markers` | `{names?: [str], strip?: true}` | `ProjectView` + `messages`: those lines assigned to the named singers (new names added to the style; “全员 / 合 / ALL …” = every one of them); `strip` takes the names out of the lyrics (the text changes: results become outdated) |
 | POST | `/api/projects/{pid}/karaoke/preview` | `{t_ms, style?, background?: "auto"\|"black"}` | `image/png` of the whole frame at `t_ms` (libass, the video's displayed size) |
-| POST | `/api/projects/{pid}/karaoke/burn` | `{background?: "auto"\|"black", audio?: "original"\|"mix"\|"none", quality?: "standard"\|"high", vocal_keep_pct?: 0–100}` | `Job` (kind `burn`); output `{filename, url, warnings}` |
+| POST | `/api/projects/{pid}/karaoke/burn` | `{background?: "auto"\|"black", audios?: ["original"\|"instrumental"\|"mix"\|"none", …], quality?: "standard"\|"high", vocal_keep_pct?: 0–100}`（每种声音一个视频；`instrumental` 去掉人声，`mix` 保留 `vocal_keep_pct`；旧的单个 `audio` 仍可用） | `Job` (kind `burn`); output `{filename, url, videos: [{filename, url, label, version}], warnings}`（`filename` / `url` 是第一个） |
 
 **Countdown** (开唱倒计时): `KaraokeStyle.countdown = {intro: true, interlude: true, min_gap_ms: 6000 (2000–30000), dots: 3 (2–5)}`:
 dots above the start of the first line (`intro`) and of a line after a pause of at least `min_gap_ms` since everything before it
@@ -348,7 +348,7 @@ unknown values → default).
 | Method | Path | Body | Response |
 | --- | --- | --- | --- |
 | GET | `/api/tasks` | – | `[PipelineTask]` newest first (without `karaoke`, `detail`, `warning_stage`) |
-| POST | `/api/tasks` | multipart: `file` (video / audio), `lyrics` (music link or lyrics text), `mode` (`lrc`\|`plain`), `name?`, `style?` (JSON `TaskStyleOptions`: source / template / colours / saved preset / translation / title card / ruby / video sound; omitted = the last choices), `background?` (a picture or a video played in a loop behind the subtitles, as `PUT …/background`; checked before the task is added, 400 when unusable) | `PipelineTask` (with its `karaoke`, `video` and `processing` snapshots) |
+| POST | `/api/tasks` | multipart: `file` (video / audio), `lyrics` (music link or lyrics text), `mode` (`lrc`\|`plain`), `name?`, `style?` (JSON `TaskStyleOptions`: source / template / colours / saved preset / translation / title card / ruby / video sound — `video_audio` a list, one video each; omitted = the last choices), `background?` (a picture or a video played in a loop behind the subtitles, as `PUT …/background`; checked before the task is added, 400 when unusable) | `PipelineTask` (with its `karaoke`, `video` and `processing` snapshots) |
 | POST | `/api/tasks/{id}/cancel` | – | `PipelineTask` |
 | POST | `/api/tasks/{id}/retry` | – | `PipelineTask` (continues from the stage that did not finish) |
 | POST | `/api/tasks/{id}/calibration` | `{marked_ms}` (first sung onset of `calibration.line_id`) or `{plain: true}` | `PipelineTask` (only while `waiting`; the task continues) |
@@ -363,11 +363,11 @@ curl -F file=@song.mp3 -F background=@cover.jpg -F lyrics='https://music.163.com
      http://127.0.0.1:8765/api/tasks
 ```
 
-`PipelineTask` = `{id, created, finished, name, mode, media_filename, background_filename, lyrics_kind: "link"|"text", lyrics_input, status, project_id, project_deleted, progress, message, error, warnings: [str], current_stage, stages: [{key, label, status, progress, message, failed_soft}], outputs: {video?: {filename, url}}, calibration, calibration_confirmed, video: TaskVideo, processing: TaskProcessing, style_label, style_colors: [str], style_applied, name_auto}` (+ `karaoke: KaraokeStyle`, `detail` (traceback) and `warning_stage` in the responses of the POST endpoints, not in the list).
+`PipelineTask` = `{id, created, finished, name, mode, media_filename, background_filename, lyrics_kind: "link"|"text", lyrics_input, status, project_id, project_deleted, progress, message, error, warnings: [str], current_stage, stages: [{key, label, status, progress, message, failed_soft}], outputs: {video?: {filename, url}, videos?: [{filename, url, label, version}]}, calibration, calibration_confirmed, video: TaskVideo, processing: TaskProcessing, style_label, style_colors: [str], style_applied, name_auto}` (+ `karaoke: KaraokeStyle`, `detail` (traceback) and `warning_stage` in the responses of the POST endpoints, not in the list).
 
 - `status`: `preparing|queued|running|waiting|succeeded|failed|cancelled|interrupted`; stage keys `import, lyrics, calibrate, readings, separate, align, export` in the order they run (tasks whose AI readings go through a web chat by hand — `processing.ai_provider: "manual"` — run `readings` in the preparation lane and wait there with `readings_request: {roundtrip_id, snapshot_id, lines, chars}`; tasks with `processing.calibration: "auto"` run `calibrate` — labelled 检测偏移 — after `separate`), stage status `pending|running|waiting|done|skipped|failed`.
 - `calibration` (LRC mode, while `waiting`): `{line_id, line_text, lrc_ms, lines: [{id, text, lrc_ms}], check_line, asset_id, duration_ms, lines_after_audio, lines_total}`; the list adds `current_ms` (the project's current offset applied to `lrc_ms`, when one was set in the detailed mode, else `null`); after a confirmation it holds `confirmed_ms`. Automatic tasks that were not sure enough add `auto: {shift_ms, tight, lines, tight_lines, drift_ms, reason, confident}` (only `{reason}` when no estimate could be made); an automatic task that was sure goes on without waiting.
-- `video` = `{auto_export, video_audio, vocal_keep_pct, quality}`, `processing` = `{ai_provider, ai_model, ai_readings (= `ai.enabled` when added), separate, separation_preset, separation_device, calibration: "manual"|"auto"}` (`calibration` from `simple.calibration`), both fixed when the task is added. `style_label` / `style_colors` describe the task's subtitle style for the list.
+- `video` = `{auto_export, video_audio: ["original"|"instrumental"|"mix"|"none", …] (one video each; a single string before v1.2.0 is still read), vocal_keep_pct, quality}`, `processing` = `{ai_provider, ai_model, ai_readings (= `ai.enabled` when added), separate, separation_preset, separation_device, calibration: "manual"|"auto"}` (`calibration` from `simple.calibration`), both fixed when the task is added. `style_label` / `style_colors` describe the task's subtitle style for the list.
 - `project_deleted: true`: the project was deleted in the detailed mode; the task stays listed without links and cannot be retried.
 - When `tasks.json` cannot be written (disk full …) the running task gets a warning.
 

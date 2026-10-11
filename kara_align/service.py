@@ -12,7 +12,7 @@ import shutil
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 
@@ -1529,6 +1529,37 @@ def karaoke_burn(h: ProjectHandle, *, background: str = "auto", audio: str = "or
              use_video_audio=use_video_audio, quality=quality, cancel=cancel, progress=progress,
              background=(bg[1], bg[0].kind) if bg else None)
     return {"filename": out.name, "warnings": warnings}
+
+
+def karaoke_burn_versions(h: ProjectHandle, versions: Sequence[str], *, background: str = "auto",
+                          quality: str = "standard", vocal_keep_pct: Optional[float] = None,
+                          cancel: Optional[CancelToken] = None,
+                          progress: Optional[Callable[[float, str], None]] = None) -> dict:
+    """Several videos with the same subtitles and different sound (原唱, 伴唱, 人声 20 %, 无声; see
+    :mod:`audio_versions`), one after another: ``{"videos": [{filename, label, version}], "warnings"}``.
+    Versions that need separated stems are left out, with a warning, when there are none."""
+    from . import audio_versions as AV
+
+    _, k = _karaoke_inputs(h, None)
+    pct = float(k.output.vocal_keep_pct if vocal_keep_pct is None else vocal_keep_pct)
+    try:
+        chosen = AV.normalize(list(versions))
+    except ValueError as e:
+        raise ServiceError(str(e)) from e
+    todo, warnings = AV.plan(chosen, pct, stems_current(h.project))
+    videos: list[dict] = []
+    for i, v in enumerate(todo):
+        tag = f"（{v['label']}，{i + 1}/{len(todo)}）" if len(todo) > 1 else ""
+
+        def sub(frac: float, msg: str = "", i: int = i, tag: str = tag) -> None:
+            if progress is not None:
+                progress((i + frac) / len(todo), f"{msg}{tag}")
+
+        out = karaoke_burn(h, background=background, audio=v["audio"], quality=quality,
+                           vocal_keep_pct=v["vocal_keep_pct"], cancel=cancel, progress=sub)
+        videos.append({"filename": out["filename"], "label": v["label"], "version": v["version"]})
+        warnings += [w for w in out["warnings"] if w not in warnings]
+    return {"videos": videos, "warnings": warnings}
 
 
 def _sync_report(h: ProjectHandle, orig: AudioAsset, stem: AudioAsset) -> dict:

@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 
 from pydantic import Field, ValidationError, field_validator, model_validator
 
+from . import audio_versions
+from .audio_versions import AudioVersion
 from .karaoke.styles import warm_style as simple_default_style
 from .models import KaraokeStyle, _Base
 from .project.store import atomic_write_text, home_dir, timestamped
@@ -109,8 +111,14 @@ class TaskStyleOptions(_Base):
     # countdown dots before the first line / after a long pause; None = as the style says
     countdown_intro: Optional[bool] = None
     countdown_interlude: Optional[bool] = None
-    video_audio: Optional[Literal["original", "mix", "none"]] = None  # None = the settings' choice
+    # the sound of the videos, one video each (audio_versions); None = the settings' choice
+    video_audio: Optional[list[AudioVersion]] = None
     vocal_keep_pct: Optional[float] = Field(default=None, ge=0.0, le=100.0)  # "mix": None = the settings' level
+
+    @field_validator("video_audio", mode="before")
+    @classmethod
+    def _audio_versions(cls, v: Any) -> Any:
+        return None if v is None else audio_versions.normalize(v)
 
 
 class SimpleSettings(_Base):
@@ -135,9 +143,14 @@ class SimpleSettings(_Base):
     # output.vocal_keep_pct is taken from vocal_keep_pct below
     karaoke: KaraokeStyle = Field(default_factory=simple_default_style)
     auto_export: bool = True
-    video_audio: Literal["original", "mix", "none"] = "original"
+    video_audio: list[AudioVersion] = Field(default_factory=lambda: ["original"])  # one video each
     vocal_keep_pct: float = Field(default=20.0, ge=0.0, le=100.0)
     quality: Literal["standard", "high"] = "standard"
+
+    @field_validator("video_audio", mode="before")
+    @classmethod
+    def _audio_versions(cls, v: Any) -> Any:
+        return audio_versions.normalize(v)
     # last choices of the new-task form (saved as they change)
     task_style: TaskStyleOptions = Field(default_factory=TaskStyleOptions)
 

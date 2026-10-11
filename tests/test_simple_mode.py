@@ -284,6 +284,7 @@ def test_task_runs_from_upload_to_video(tmp_path, monkeypatch):
     assert (k.timing.lead_in_ms, k.timing.hold_ms, k.layout.margin_v) == (4000, 2000, 40)
     video = h.dir / "exports" / t.outputs["video"]["filename"]
     assert video.exists() and video.stat().st_size > 1000
+    assert [v["label"] for v in t.outputs["videos"]] == ["原唱"] and t.outputs["videos"][0]["url"] == t.outputs["video"]["url"]
     assert re.fullmatch(r".+-karaoke-\d{8}-\d{6}(-\d+)?\.mp4", video.name)  # its own name: later burns never overwrite it
     # the queue survives a restart; finished tasks stay listed
     q2 = P.TaskQueue(S.Workspace(tmp_path / "projects"))
@@ -420,8 +421,9 @@ def test_each_task_keeps_its_own_style_and_video_settings(tmp_path, monkeypatch)
     a, b = _wait(q, a.id), _wait(q, b.id)
     assert a.status == b.status == "succeeded", (a.error, b.error)
     assert (a.style_label, a.style_colors) == ("荧光", ["#FF8A1E", "#FFC53D"]) and b.style_label == "朴素"
-    assert (a.video.video_audio, a.video.vocal_keep_pct) == ("mix", 35) and not a.video.auto_export
-    assert (b.video.video_audio, b.video.vocal_keep_pct) == ("original", 20)  # the settings' level when not chosen
+    # (one string, as before v1.2.0: kept as a list of versions)
+    assert (a.video.video_audio, a.video.vocal_keep_pct) == (["mix"], 35) and not a.video.auto_export
+    assert (b.video.video_audio, b.video.vocal_keep_pct) == (["original"], 20)  # the settings' level when not chosen
     assert a.stage("export").status == b.stage("export").status == "skipped"  # auto export was off when added
     # so was separation: not picked up from the settings changed afterwards
     assert a.processing.separate is False and a.stage("separate").status == "skipped"
