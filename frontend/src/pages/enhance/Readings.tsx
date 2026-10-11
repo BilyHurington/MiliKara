@@ -4,11 +4,11 @@
 import { Languages, Lock, Sparkles, Wand2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/format';
+import { cn, toKatakana } from '@/lib/format';
 import type { Line, ProjectView, Segment } from '@/lib/types';
 import { ppath, run, setPV, toast, useProject, useView } from '@/store/app';
 import {
-  Badge, Button, Callout, Card, CardBody, CardHeader, Dialog, EmptyState, Field, Input, Segmented, Switch, Tip,
+  Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, Dialog, EmptyState, Field, Input, Segmented, Switch, Tip,
 } from '@/components/ui';
 
 type Filter = 'all' | 'uncertain' | 'manual';
@@ -24,7 +24,9 @@ const SOURCE: Record<Segment['reading_source'], { label: string; chip: string; t
 const needsCheck = (s: Segment) => s.uncertain && !s.confirmed;
 /** Words (letters, digits) still without a reading: shown as chips too, so they can be given one;
  *  punctuation and spaces stay plain text. */
-const readable = (s: Segment) => s.units.length > 0 || /[\p{L}\p{N}]/u.test(s.surface);
+const readable = (s: Segment) => !s.hidden && (s.units.length > 0 || /[\p{L}\p{N}]/u.test(s.surface));
+/** A reading as the lyrics write it (宿敵 → ライバル in katakana). */
+const shown = (seg: Segment, r: string) => (seg.katakana ? toKatakana(r) : r);
 
 export function ReadingsCard() {
   const project = useProject()!;
@@ -136,7 +138,7 @@ export function ReadingsCard() {
 }
 
 function LineRow({ line, index, onEdit }: { line: Line; index: number; onEdit: (s: Segment) => void }) {
-  const noUnits = line.segments.every((s) => !readable(s));
+  const noUnits = line.segments.every((s) => !readable(s) && !s.hidden);
   return (
     <li className="flex gap-4 px-4 py-3 hover:bg-surface-2/40">
       <span className="tabular w-7 shrink-0 pt-2 text-right text-xs text-subtle">{index}</span>
@@ -145,7 +147,9 @@ function LineRow({ line, index, onEdit }: { line: Line; index: number; onEdit: (
           <div className="pt-1.5 text-sm text-muted">{line.text}<span className="ml-2 text-xs text-warn">（尚无读音，点击“规则注音”）</span></div>
         ) : (
           <div className="flex flex-wrap items-end gap-1.5">
-            {line.segments.map((seg) => (!readable(seg)
+            {line.segments.map((seg) => (seg.hidden
+              ? <HiddenBrackets key={seg.id} line={line} seg={seg} />
+              : !readable(seg)
               ? <span key={seg.id} className="px-0.5 pb-1 text-sm text-subtle">{seg.surface}</span>
               : <SegmentChip key={seg.id} seg={seg} onClick={() => onEdit(seg)} />))}
           </div>
@@ -162,6 +166,7 @@ function SegmentChip({ seg, onClick }: { seg: Segment; onClick: () => void }) {
   const tip = [
     `来源：${src.label}`,
     seg.units.length ? '' : '没有读音：点击填写（不填时这里不参与对齐）',
+    seg.katakana ? '注音按歌词的写法显示为片假名' : '',
     seg.confirmed ? '已确认' : warn ? '不确定，建议确认' : '',
     seg.note,
     seg.candidates.length ? `候选：${seg.candidates.join(' / ')}` : '',
@@ -180,7 +185,7 @@ function SegmentChip({ seg, onClick }: { seg: Segment; onClick: () => void }) {
         <span className="px-0.5 text-[15px] leading-6 font-medium">{seg.surface}</span>
         <span className="flex justify-center divide-x divide-line-strong/60 border-t border-line/70 pt-0.5">
           {seg.units.length ? seg.units.map((u) => (
-            <span key={u.id} className="px-1 text-[11px] leading-4 text-muted">{u.reading}</span>
+            <span key={u.id} className="px-1 text-[11px] leading-4 text-muted">{shown(seg, u.reading)}</span>
           )) : <span className="px-1 text-[11px] leading-4 font-bold text-warn" aria-label="没有读音">？</span>}
         </span>
         {seg.confirmed && <Lock className="absolute -top-1.5 -right-1.5 size-3.5 rounded-full bg-surface p-0.5 text-ok shadow" />}
@@ -192,14 +197,32 @@ function SegmentChip({ seg, onClick }: { seg: Segment; onClick: () => void }) {
   );
 }
 
+/** Brackets the AI took for the reading of the word before them: not shown; can be shown again. */
+function HiddenBrackets({ line, seg }: { line: Line; seg: Segment }) {
+  const show = () => run(async () => {
+    setPV(await api.put<ProjectView>(ppath(`/lines/${line.id}/segments/${seg.id}/hidden`), { hidden: false }));
+    toast('ok', `「${seg.surface}」会显示在字幕里`, '它没有读音、不参与对齐；是要唱的歌词时，点它补上读音');
+  }, '修改失败');
+  return (
+    <Tip content="括号里是前面那个词的读音（AI 注音判断）：字幕里不显示，也不算演唱">
+      <span>
+        <ConfirmButton size="xs" variant="ghost" className="mb-0.5 text-subtle line-through" question={`在字幕里显示「${seg.surface}」？`}
+          confirmLabel="显示" onConfirm={show}>
+          {seg.surface}
+        </ConfirmButton>
+      </span>
+    </Tip>
+  );
+}
+
 /** Same unit splitting the server applies when units are given: '/' or whitespace. */
 function splitUnits(text: string): string[] {
   return text.split(/[\s/／]+/).map((x) => x.trim()).filter(Boolean);
 }
 
 function EditReadingDialog({ line, seg, onClose }: { line: Line; seg: Segment; onClose: () => void }) {
-  const [reading, setReading] = useState(seg.reading ?? '');
-  const [units, setUnits] = useState(seg.units.map((u) => u.reading).join(' / '));
+  const [reading, setReading] = useState(shown(seg, seg.reading ?? ''));
+  const [units, setUnits] = useState(seg.units.map((u) => shown(seg, u.reading)).join(' / '));
   const [confirm, setConfirm] = useState(true);
   const [busy, setBusy] = useState(false);
   const unitList = splitUnits(units);
@@ -241,7 +264,9 @@ function EditReadingDialog({ line, seg, onClose }: { line: Line; seg: Segment; o
       }
     >
       <div className="space-y-4">
-        <Field label="读音" hint={seg.lang === 'ja' ? '平假名或片假名（会统一为平假名）；写实际发音，例如助词 は → わ' : `语言：${seg.lang}`}>
+        <Field label="读音" hint={seg.lang === 'ja'
+          ? '写实际发音，例如助词 は → わ。用平假名；歌词本里用片假名标的特殊读法（宿敵 → ライバル）就输入片假名，字幕上也显示片假名'
+          : `语言：${seg.lang}`}>
           <Input autoFocus value={reading} onChange={(e) => setReading(e.target.value)} className="font-medium" />
         </Field>
         {seg.candidates.length > 0 && (

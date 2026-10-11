@@ -4,7 +4,7 @@
 import { ArrowRight, Bot, ClipboardCopy, ClipboardPaste, FileCheck2, History, RotateCcw, Settings2, Wand2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
-import { cn, copyText, fmtRelative, readFileText } from '@/lib/format';
+import { cn, copyText, fmtRelative, readFileText, toKatakana } from '@/lib/format';
 import type { Job, PatchLine, ProjectView } from '@/lib/types';
 import { cancelJob, ppath, run, setPV, toast, trackJob, useJob, useProject } from '@/store/app';
 import { useDraft } from '@/store/drafts';
@@ -419,11 +419,13 @@ function DiffChip({ d }: { d: Report['lines'][number]['diff'][number] }) {
     <span className={cn('inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs',
       changed ? 'border-accent/40 bg-accent-soft' : 'border-line bg-surface-2 text-muted')}>
       <span className="font-medium text-fg">{d.surface}</span>
-      {changed ? (
+      {d.hidden ? (
+        <span className="text-subtle">括号里是读音：字幕里不显示</span>
+      ) : changed ? (
         <>
           <span className="text-subtle line-through">{d.old_units.join('/') || '—'}</span>
           <ArrowRight className="size-3 text-accent" />
-          <span className="font-medium text-accent">{d.new_units.join('/') || '—'}</span>
+          <span className="font-medium text-accent">{(d.katakana ? d.new_units.map(toKatakana) : d.new_units).join('/') || '—'}</span>
         </>
       ) : (
         <span>{d.new_units.join('/') || d.old_units.join('/')}</span>

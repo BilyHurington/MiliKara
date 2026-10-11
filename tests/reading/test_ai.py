@@ -191,3 +191,45 @@ def test_unknown_line_and_duplicate():
     p["lines"].append(dict(p["lines"][0]))
     st = [lr.status for lr in validate_patch(doc, p, [b.roundtrip]).lines]
     assert "unknown_line" in st and "duplicate" in st
+
+
+def test_a_reading_the_lyrics_write_in_katakana_and_one_in_brackets():
+    """宿敵 → ライバル keeps katakana for the subtitles; 敬意(リスペクト): the brackets hold the reading."""
+    doc = LyricsDoc(lines=[Line(id="L1", text="宿敵に敬意(リスペクト)")])
+    prepare_doc(doc)
+    b = build_prompt(doc)
+    assert "hidden" in b.prompt and "ライバル" in b.prompt
+    segs = [{"surface": "宿敵", "reading": "ライバル", "units": ["ラ", "イ", "バ", "ル"]}, {"surface": "に", "reading": "に"},
+            {"surface": "敬意", "reading": "リスペクト"}, {"surface": "(リスペクト)", "hidden": True}]
+    patch = {"format": FMT_READING_PATCH, "version": 1, "snapshot": b.snapshot_id,
+             "lines": [{"id": "L1", "text": "宿敵に敬意(リスペクト)", "segments": segs}]}
+    rep = validate_patch(doc, patch, [b.roundtrip])
+    assert rep.ok, rep
+    diff = rep.lines[0].diff
+    assert [(d.katakana, d.hidden) for d in diff] == [(True, False), (False, False), (True, False), (False, True)]
+    new, _ = apply_patch(doc, rep)
+    s = new.lines[0].segments
+    assert (s[0].reading, s[0].katakana, [u.reading for u in s[0].units]) == ("らいばる", True, ["ら", "い", "ば", "る"])
+    assert not s[1].katakana and s[3].hidden and not s[3].units
+    # the AI sees them so next time
+    again = build_prompt(new).prompt
+    assert '"reading": "ライバル"' in again and '"hidden": true' in again
+    # only brackets right after a word with a reading may be hidden, and they have no reading
+    for bad in ([{"surface": "宿敵に敬意", "reading": "らいばるにけいい"}, {"surface": "(リスペクト)", "hidden": True, "reading": "りすぺくと"}],
+                [{"surface": "宿敵に", "reading": "らいばるに"}, {"surface": "敬意(リスペクト)", "hidden": True}]):
+        patch["lines"][0]["segments"] = bad
+        assert validate_patch(doc, patch, [b.roundtrip]).lines[0].status == "invalid"
+
+
+def test_a_katakana_reading_typed_by_hand_stays_katakana():
+    doc = LyricsDoc(lines=[Line(id="L1", text="本気でライバル")])
+    prepare_doc(doc)
+    ln = doc.lines[0]
+    seg = next(s for s in ln.segments if s.surface == "本気")
+    set_segment_reading(ln, seg.id, "マジ")
+    assert (seg.reading, seg.katakana) == ("まじ", True)
+    set_segment_reading(ln, seg.id, "ほんき")
+    assert not seg.katakana
+    kana = next(s for s in ln.segments if s.surface == "ライバル")  # a katakana word: nothing to keep
+    set_segment_reading(ln, kana.id, "ライバル")
+    assert not kana.katakana

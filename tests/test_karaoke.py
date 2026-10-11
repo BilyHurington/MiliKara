@@ -105,6 +105,18 @@ def test_digits_get_ruby_like_kanji():
     assert ch[0].base[0].start == 1000 and ch[0].base[0].end == 2000  # swept over its five units
 
 
+def test_a_katakana_reading_and_a_reading_in_brackets():
+    rival = _seg("宿敵", "らいばる")
+    rival.katakana = True
+    brackets = Segment(surface="(ライバル)", reading=None, units=[], hidden=True)
+    line = Line(text="宿敵(ライバル)に", segments=[rival, brackets, _seg("に", "に")])
+    st = KaraokeStyle()
+    ch = A.build_chunks(line, _times(line), st, {})
+    assert [(c.base_text, c.ruby_text) for c in ch] == [("宿敵", "ライバル"), ("に", "")]  # brackets not drawn
+    st.ruby.script = "romaji"
+    assert A.build_chunks(line, _times(line), st, {})[0].ruby_text != "ライバル"
+
+
 def test_karaoke_tags_follow_unit_times_exactly():
     parts = [A.Part("ま", 1000, 1210), A.Part("ど", 1300, 1400)]
     tags = A._karaoke(parts, 500, "kf")
@@ -810,3 +822,16 @@ def test_export_names_never_repeat(tmp_path):
     # one still being written (its part file) also counts as taken
     b.with_name(f".{b.stem}.part.mp4").write_bytes(b"")
     assert S.export_path(h, S._export_stem(h) + "-karaoke", ".mp4") != b
+
+
+def test_brackets_taken_for_a_reading_can_be_shown_again(tmp_path):
+    h = _project(tmp_path)
+    ln = h.project.lyrics.sung_lines()[0]
+    sung = next(s for s in ln.segments if s.units)
+    with pytest.raises(S.ServiceError):
+        S.set_segment_hidden(h, ln.id, sung.id, True)  # sung: never hidden
+    sung.units, sung.reading = [], None  # (as brackets the AI set aside)
+    S.set_segment_hidden(h, ln.id, sung.id, True)
+    assert sung.hidden
+    S.set_segment_hidden(h, ln.id, sung.id, False)
+    assert not sung.hidden

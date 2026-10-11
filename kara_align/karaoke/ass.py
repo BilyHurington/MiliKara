@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..models import AlignmentResult, KaraokeStyle, Line, Project, Segment
-from ..reading.japanese import is_kanji, to_hiragana
+from ..reading.japanese import is_kanji, to_hiragana, to_katakana
 from .fonts import (BUNDLED_JP, BUNDLED_SC, HAN_FAMILIES, Measurer, bundled, covering_family, default_family,
                     installed, lacking, system_han_fallback)
 
@@ -52,8 +52,6 @@ PAUSE_HIDE_MS = 6000  # a pause inside a line at least this long hides the line 
 # text helpers
 
 
-def to_katakana(s: str) -> str:
-    return "".join(chr(ord(c) + 0x60) if "ぁ" <= c <= "ゖ" else c for c in s)
 
 
 def has_kanji(s: str) -> bool:
@@ -264,6 +262,9 @@ def build_chunks(line: Line, times: dict[str, tuple[Optional[int], Optional[int]
         return range_singers(chars, pos, pos + n, line.text if len(line.text) == len(chars) else None)
 
     for seg in line.segments:
+        if seg.hidden:  # a reading in brackets: its word shows it as ruby
+            pos += len(seg.surface)
+            continue
         if not seg.units:
             chunks.append(Chunk([Part(seg.surface, None, None)], wrap_before=seg.wrap_before,
                                 singers=sung_by(len(seg.surface))))
@@ -292,7 +293,9 @@ def build_chunks(line: Line, times: dict[str, tuple[Optional[int], Optional[int]
             wants = ruby_cfg.enabled and seg.lang == "ja" and (kanji or ruby_cfg.target == "all"
                                                                 or any(c.isdigit() for c in surface))
             if wants:
-                ruby = [Part(_ruby_text(u.reading, ruby_cfg.script, romaji.get(u.id)), s, e)
+                # a reading the lyrics write in katakana (宿敵 → ライバル) stays katakana over hiragana ruby
+                script = "katakana" if seg.katakana and ruby_cfg.script == "hiragana" else ruby_cfg.script
+                ruby = [Part(_ruby_text(u.reading, script, romaji.get(u.id)), s, e)
                         for u, (s, e) in zip(units, t)]
                 if "".join(p.text for p in ruby) == surface:
                     ruby = []  # e.g. hiragana ruby over hiragana

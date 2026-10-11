@@ -8,6 +8,7 @@ import { player } from '@/audio/player';
 import { StudioDock } from '@/components/shell/StudioDock';
 import { Sidebar } from '@/components/shell/Sidebar';
 import { currentResult, useApp, WAVE_HEIGHT } from '@/store/app';
+import { toKatakana } from '@/lib/format';
 import { fixturePV, mockApi, renderUI, seedStore } from '@/test/helpers';
 import { builtinSaved, plainStyle } from '@/test/style';
 import { AlignPage } from './Align';
@@ -55,6 +56,7 @@ function serverLike() {
     [`POST /api/projects/${PID}/calibration/`]: viewResp,
     [`POST /api/projects/${PID}/`]: viewResp,
     [`PATCH /api/projects/${PID}`]: viewResp,
+    [`PUT /api/projects/${PID}/lines/`]: viewResp,
     'GET /api/jobs/': () => ({ id: 'job1', kind: 'align', project_id: PID, status: 'running', progress: 0.4, message: '解码', error: null, created: 'z', finished: null, output: null }),
   });
 }
@@ -239,6 +241,25 @@ describe('interactions', () => {
     expect(screen.queryByRole('button', { name: /^、/ })).toBeNull();
     await userEvent.click(digit);
     expect(await screen.findByRole('dialog', { name: /修改读音：3/ })).toBeInTheDocument();
+  });
+
+  it('enhance: a reading the lyrics write in katakana, and brackets taken for a reading', async () => {
+    localStorage.removeItem('kara.enhanceTab');
+    const pv = fixturePV();
+    const line = pv.project.lyrics.lines[0];
+    const word = line.segments.find((s) => s.units.length > 1)!;
+    word.katakana = true;
+    const brackets = { ...word, id: 's-br', surface: '(ライバル)', reading: null, units: [], katakana: false, hidden: true };
+    line.segments.splice(line.segments.indexOf(word) + 1, 0, brackets);
+    line.text = line.segments.map((s) => s.surface).join('');
+    seedStore('enhance', pv);
+    const api = serverLike();
+    renderUI(<EnhancePage />);
+    const [chip] = await screen.findAllByRole('button', { name: new RegExp(`^${word.surface}`) });  // (line 1 first)
+    expect(chip).toHaveTextContent(toKatakana(word.units[0].reading));
+    await userEvent.click(screen.getByRole('button', { name: '(ライバル)' }));
+    await userEvent.click(await screen.findByRole('button', { name: '显示' }));
+    await waitFor(() => expect(api.find('PUT', '/segments/s-br/hidden')[0]?.body).toEqual({ hidden: false }));
   });
 
   it('enhance: the three tasks are tabs with their status, and a draft survives switching', async () => {

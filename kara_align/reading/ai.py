@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable, Optional, Sequence
 
 from ..models import FMT_READING_PATCH, AiRoundtrip, Line, LyricsDoc, Segment, stable_hash
-from .japanese import is_kana, is_kana_text, letter_name, split_morae, to_hiragana
+from .japanese import is_kana, is_kana_text, keeps_katakana, letter_name, split_morae, to_hiragana, to_katakana
 from .prepare import _assign_surfaces, units_from_spec
 
 MAX_REPLY_CHARS = 2_000_000
@@ -60,8 +60,11 @@ def _line_payload(line: Line) -> dict[str, Any]:
     for s in line.segments:
         item: dict[str, Any] = {"surface": s.surface}
         if s.reading:
-            item["reading"] = s.reading
-            item["units"] = [u.reading for u in s.units]
+            kata = s.katakana and s.lang == "ja"
+            item["reading"] = to_katakana(s.reading) if kata else s.reading
+            item["units"] = [to_katakana(u.reading) if kata else u.reading for u in s.units]
+        if s.hidden:
+            item["hidden"] = True
         if _is_locked(s):
             item["locked"] = True
         if s.uncertain:
@@ -93,7 +96,7 @@ def build_prompt(doc: LyricsDoc, line_ids: Optional[Sequence[str]] = None, lang:
         }],
     }
     lang_note = {
-        "ja": "歌词为日语。reading 使用平假名（外来语也写平假名或片假名均可），units 按拍（mora）切分：拗音（きゃ）合为一拍，促音っ、拨音ん、长音ー各自单独一拍。",
+        "ja": "歌词为日语。reading 一般使用平假名（外来语也写平假名），units 按拍（mora）切分：拗音（きゃ）合为一拍，促音っ、拨音ん、长音ー各自单独一拍。",
         "zh": "歌词为中文。reading 使用不带声调的拼音，每个汉字一个 unit。",
         "en": "Lyrics are English. reading is the lowercase word, one unit per word.",
     }.get(lang, "")
@@ -107,6 +110,11 @@ def build_prompt(doc: LyricsDoc, line_ids: Optional[Sequence[str]] = None, lang:
         "逐个念出的拉丁字母（如 R O M A N T I C）：每个字母单独一个 segment，reading 写字母名的读法"
         "（R＝あーる、M＝えむ、C＝しー、W＝だぶりゅー），整个字母只算一个 unit（units 为 [\"あーる\"]），不要按拍拆开。"
         "日语歌词里的英文单词按歌里实际的唱法写成假名（now＝なう、friends＝ふれんず），units 照常按拍切分。",
+        "歌词本里给汉字另标了读法、并且用片假名写的（当て字，如 宿敵＝ライバル、敬意＝リスペクト、本気＝マジ），"
+        "reading 和 units 写成片假名，字幕上会照样用片假名显示；其他读音一律写平假名。",
+        "紧跟在词后面的括号（如「宿敵(ライバル)」）：先判断括号里是不是前面那个词的读音。是读音时，读音写在前面那个词上"
+        "（歌词本用片假名的照写片假名），括号连同里面的文字单独作为一个 segment，设 \"hidden\": true，不写 reading 和 units"
+        "（字幕里不显示，也不算演唱）；括号里是和声、另一句歌词或补充说明时照常注音，不要设 hidden。",
         "用阿拉伯数字写的数字也要注音，按歌里实际的唱法写成假名（24＝にじゅうよん 或 にじゅうよ，3＝さん，"
         "英语唱法 1＝わん），units 按拍切分；current_segments 里数字的读音只是常见读法，不一定是歌里的唱法。",
         "卡拉OK字幕里一行放不下时需要折成两行：歌词行较长（约 18 个字以上）时，在最适合换行的位置（意思和节奏的停顿处），"
@@ -183,6 +191,8 @@ class SegmentDiff:
     new_units: list[str]
     changed: bool
     locked: bool = False
+    katakana: bool = False  # the new reading is shown in katakana
+    hidden: bool = False  # brackets holding the reading of the word before them: not shown
 
 
 @dataclass
@@ -262,6 +272,18 @@ def _validate_segments(line: Line, raw_segs: Any, reasons: list[str]) -> list[di
         reading = rs.get("reading")
         units = rs.get("units")
         cands = rs.get("candidates") or []
+        if rs.get("hidden") is True:
+            # 宿敵(ライバル): the brackets hold the reading of the word before them
+            inner = surface.strip()
+            if (reading or "").strip() or units:
+                reasons.append(f"segment[{i}] 设为 hidden 时不能有读音（{surface}）")
+                continue
+            if not (inner[:1] in "(（" and inner[-1:] in ")）") or not out or not out[-1]["reading"]:
+                reasons.append(f"segment[{i}] 只有紧跟在有读音的词后面的括号可以设为 hidden（{surface}）")
+                continue
+            out.append({"surface": surface, "reading": None, "units": None, "lang": "ja", "candidates": [],
+                        "uncertain": False, "wrap_before": rs.get("wrap") is True, "hidden": True, "katakana": False})
+            continue
         if reading is not None and not isinstance(reading, str):
             reasons.append(f"segment[{i}].reading 不是字符串")
             continue
@@ -275,8 +297,10 @@ def _validate_segments(line: Line, raw_segs: Any, reasons: list[str]) -> list[di
         has_jp = any(is_kana(c) or (0x3400 <= ord(c) <= 0x9FFF) for c in surface)
         is_latin = bool(re.search(r"[A-Za-z]", surface)) and not has_jp
         lang = "ja"
+        katakana = False
         if reading:
             if is_kana_text(reading):
+                katakana = keeps_katakana(surface, reading)  # 宿敵 → ライバル, as the lyrics book writes it
                 reading = to_hiragana(reading)
                 units = [to_hiragana(u) for u in units] if units else None
                 cands = [to_hiragana(c) for c in cands]
@@ -305,7 +329,7 @@ def _validate_segments(line: Line, raw_segs: Any, reasons: list[str]) -> list[di
                 lang = "en"
         out.append({"surface": surface, "reading": reading or None, "units": units, "lang": lang,
                     "candidates": [c for c in cands if c], "uncertain": bool(rs.get("uncertain", False)),
-                    "wrap_before": rs.get("wrap") is True})
+                    "wrap_before": rs.get("wrap") is True, "katakana": katakana and lang == "ja", "hidden": False})
     if "".join(s["surface"] for s in out) != line.text and not reasons:
         reasons.append("surface 拼接结果与当前原文不一致")
     return out
@@ -435,10 +459,12 @@ def _diff(line: Line, segs: list[dict]) -> list[SegmentDiff]:
         old_units = [u.reading for u in cur.units] if cur else []
         old_reading = cur.reading if cur else None
         locked = bool(cur and _is_locked(cur))
+        kata, hidden = bool(s.get("katakana")), bool(s.get("hidden"))
+        changed = (old_reading != s["reading"] or old_units != new_units or cur is None
+                   or (cur.katakana, cur.hidden) != (kata, hidden))
         out.append(SegmentDiff(surface=s["surface"], old_reading=old_reading, new_reading=s["reading"],
-                               old_units=old_units, new_units=new_units,
-                               changed=(old_reading != s["reading"] or old_units != new_units or cur is None),
-                               locked=locked))
+                               old_units=old_units, new_units=new_units, changed=changed, locked=locked,
+                               katakana=kata, hidden=hidden))
     return out
 
 
@@ -490,12 +516,12 @@ def _segment_from_spec(spec: dict) -> Segment:
         units = units_from_spec(reading, spec["units"], lang)
         seg = Segment(surface=spec["surface"], reading=reading, lang=lang, units=units, reading_source="ai",
                       confirmed=False, uncertain=spec["uncertain"], candidates=list(spec["candidates"]),
-                      wrap_before=bool(spec.get("wrap_before")))
+                      wrap_before=bool(spec.get("wrap_before")), katakana=bool(spec.get("katakana")))
         _assign_surfaces(seg)
         if lang == "en":
             for u in seg.units:
                 u.surface = spec["surface"] if len(seg.units) == 1 else ""
     else:
         seg = Segment(surface=spec["surface"], reading=None, lang=lang, units=[], reading_source="none",
-                      wrap_before=bool(spec.get("wrap_before")))
+                      wrap_before=bool(spec.get("wrap_before")), hidden=bool(spec.get("hidden")))
     return seg

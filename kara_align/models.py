@@ -100,6 +100,12 @@ class Segment(_Base):
     # karaoke display only: a long line may wrap before this segment (suggested by the AI readings;
     # used with layout.wrap == "ai").  Not part of any revision: it never changes an alignment.
     wrap_before: bool = False
+    # display only, in no revision either: the ruby is shown in katakana, as the lyrics book writes a
+    # reading of its own (宿敵 → ライバル); the reading itself stays hiragana for the aligner
+    katakana: bool = False
+    # a reading written in brackets after its word (宿敵(ライバル)): neither sung nor shown, the word
+    # before it carries it as ruby.  Set by the AI readings only (brackets often hold a chorus line)
+    hidden: bool = False
 
 
 class LineSource(_Base):

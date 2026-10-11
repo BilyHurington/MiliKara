@@ -18,6 +18,10 @@ export interface Segment {
   uncertain: boolean;
   candidates: string[];
   note: string;
+  /** the ruby is shown in katakana, as the lyrics book writes this reading (宿敵 → ライバル) */
+  katakana?: boolean;
+  /** brackets holding the reading of the word before them (宿敵(ライバル)): not shown, not sung */
+  hidden?: boolean;
 }
 
 export interface LineAnchor { abs_ms: number; hard: boolean; tolerance_ms: number; note: string }
@@ -427,7 +431,10 @@ export interface PatchLine {
   line_id: string;
   status: string;
   reasons: string[];
-  diff: { surface: string; old_reading: string | null; new_reading: string | null; old_units: string[]; new_units: string[] }[];
+  diff: {
+    surface: string; old_reading: string | null; new_reading: string | null; old_units: string[]; new_units: string[];
+    katakana?: boolean; hidden?: boolean;
+  }[];
 }
 export interface PatchReport { ok: boolean; snapshot_match: boolean; warnings: string[]; errors: string[]; lines: PatchLine[]; missing_line_ids?: string[] }
 

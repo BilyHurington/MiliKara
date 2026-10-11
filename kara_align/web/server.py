@@ -128,6 +128,10 @@ class SegmentBody(BaseModel):
     confirm: bool = True
 
 
+class HiddenBody(BaseModel):
+    hidden: bool
+
+
 class ReportApplyBody(BaseModel):
     report_id: str
     line_ids: Optional[list[str]] = None
@@ -771,6 +775,12 @@ def create_app(root: Optional[Path] = None, jobs: Optional[JobManager] = None,
     def segment_reading(pid: str, line_id: str, segment_id: str, body: SegmentBody):
         h = handle(pid)
         guard(S.set_segment_reading, h, line_id, segment_id, body.reading, body.units, body.confirm)
+        return view(h)
+
+    @app.put("/api/projects/{pid}/lines/{line_id}/segments/{segment_id}/hidden")
+    def segment_hidden(pid: str, line_id: str, segment_id: str, body: HiddenBody):
+        h = handle(pid)
+        guard(S.set_segment_hidden, h, line_id, segment_id, body.hidden)
         return view(h)
 
     @app.post("/api/projects/{pid}/ai/prompt")

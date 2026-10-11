@@ -110,3 +110,6 @@ export function parseTime(text: string): number | null {
   if (/^\d+$/.test(t)) return Number(t);
   return null;
 }
+
+/** Hiragana → katakana (other characters unchanged): a reading shown as the lyrics write it. */
+export const toKatakana = (s: string) => s.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));

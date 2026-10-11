@@ -775,6 +775,19 @@ def set_segment_reading(h: ProjectHandle, line_id: str, segment_id: str, reading
         h.save()
 
 
+def set_segment_hidden(h: ProjectHandle, line_id: str, segment_id: str, hidden: bool) -> None:
+    """Show (or hide) a segment without a reading: brackets the AI took for a reading (宿敵(ライバル))."""
+    with h.lock:
+        ln = _line(h, line_id)
+        seg = next((s for s in ln.segments if s.id == segment_id), None)
+        if seg is None:
+            raise ServiceError(f"没有这个片段：{segment_id}")
+        if hidden and seg.units:
+            raise ServiceError("有读音的片段是要唱的，不能隐藏")
+        seg.hidden = hidden
+        h.save()
+
+
 # ---------------------------------------------------------------------------
 # AI round trip
 # ---------------------------------------------------------------------------

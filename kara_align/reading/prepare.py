@@ -12,7 +12,7 @@ from typing import Optional, Sequence
 
 from ..models import Line, LyricsDoc, Segment, Unit
 from . import chinese, english, japanese
-from .japanese import is_kana_text, split_morae, to_hiragana
+from .japanese import is_kana_text, keeps_katakana, split_morae, to_hiragana
 
 PROTECTED_SOURCES = ("manual", "ai")
 
@@ -268,11 +268,14 @@ def set_segment_reading(line: Line, segment_id: str, reading: str, units: Option
     seg = next((s for s in line.segments if s.id == segment_id), None)
     if seg is None:
         raise KeyError(segment_id)
+    katakana = seg.lang == "ja" and keeps_katakana(seg.surface, reading)
     if seg.lang == "ja":
         reading = to_hiragana(reading)
     new_units = units_from_spec(reading, units, seg.lang)
     replace_units_keep_ids(seg, new_units)
     seg.reading = reading
+    seg.katakana = katakana
+    seg.hidden = False  # a reading: it is sung
     seg.reading_source = source  # type: ignore[assignment]
     seg.confirmed = confirm
     seg.uncertain = False

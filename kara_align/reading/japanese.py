@@ -71,6 +71,23 @@ def _kana_code(ch: str) -> bool:
 _NON_KANA = {"\u30a0", "\u30fb", "\u309b", "\u309c"}
 
 
+def to_katakana(s: str) -> str:
+    """Hiragana -> katakana; other characters unchanged."""
+    return "".join(chr(ord(c) + 0x60) if "ぁ" <= c <= "ゖ" else c for c in s)
+
+
+def is_katakana_text(s: str) -> bool:
+    """Only katakana (and long marks), with at least one katakana letter: ライバル."""
+    s = s.strip()
+    return any("\u30a1" <= c <= "\u30fa" for c in s) and all("\u30a1" <= c <= "\u30fa" or c in "ーヽヾ・" for c in s)
+
+
+def keeps_katakana(surface: str, reading: str) -> bool:
+    """A reading written in katakana for a word that is not kana itself (宿敵 → ライバル, 本気 → マジ):
+    shown in katakana, as written."""
+    return is_katakana_text(reading) and not is_kana_text(surface.strip())
+
+
 def is_kana(ch: str) -> bool:
     code = ord(ch)
     if ch in _NON_KANA:

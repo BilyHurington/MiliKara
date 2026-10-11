@@ -71,7 +71,7 @@ def prepare(
                 issues.append(Issue(code="model_language_mismatch", severity="warning", line_id=lid,
                                     message=f"后端模型未针对语言「{seg.lang}」训练",
                                     data={"lang": seg.lang}))
-            if not seg.units and any(c.isalnum() for c in seg.surface):
+            if not seg.units and not seg.hidden and any(c.isalnum() for c in seg.surface):
                 # e.g. an unknown word, or a reading removed: silently not aligned otherwise
                 issues.append(Issue(code="segment_no_reading", severity="warning", line_id=lid,
                                     message=f"片段「{seg.surface}」没有读音，不参与对齐；可以在“注音”里点它补上读音",
