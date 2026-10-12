@@ -220,7 +220,7 @@ def _classify_outputs(files: list[str], out_dir: Path) -> tuple[Path, Path, list
 
 
 def separate(original_path, out_dir, preset: str = "melband-roformer", cancel=None,
-             progress: Optional[Callable[[float, str], None]] = None, *, timeout_s: Optional[float] = None,
+             progress: Optional[Callable[[float, str], None]] = None, *, stall_s: Optional[float] = None,
              python: Optional[str] = None, device: str = "auto") -> SeparationOutput:
     """Separate ``original_path`` into vocals / instrumental WAVs in ``out_dir``.
 
@@ -258,9 +258,13 @@ def separate(original_path, out_dir, preset: str = "melband-roformer", cancel=No
     out_chunks: list[str] = []
     err_tail: list[str] = []
     pct = {"value": None}
+    # when the child last wrote anything (its progress bar moves with every chunk it separates): a slow
+    # computer is waited for as long as it takes, only a child that has gone quiet for stall_s is stopped
+    alive = {"t": time.monotonic()}
 
     def _drain_out() -> None:
         for chunk in iter(lambda: proc.stdout.read(4096), ""):
+            alive["t"] = time.monotonic()
             out_chunks.append(chunk)
 
     def _drain_err() -> None:
@@ -271,6 +275,7 @@ def separate(original_path, out_dir, preset: str = "melband-roformer", cancel=No
         raw = proc.stderr.buffer
         buf = ""
         for data in iter(lambda: raw.read1(4096), b""):
+            alive["t"] = time.monotonic()
             buf = (buf + dec.decode(data))[-8192:]
             found = _PCT_RE.findall(buf[-1024:])
             if found:
@@ -290,8 +295,8 @@ def separate(original_path, out_dir, preset: str = "melband-roformer", cancel=No
                 except subprocess.TimeoutExpired:
                     pass  # killed in finally
                 raise Cancelled()
-            if timeout_s and time.monotonic() - started > timeout_s:
-                raise SeparationError(f"人声分离超过 {max(1, int(timeout_s // 60))} 分钟没有完成，已停止"
+            if stall_s and time.monotonic() - alive["t"] > stall_s:
+                raise SeparationError(f"人声分离已经 {max(1, int(stall_s // 60))} 分钟没有任何进展，已停止"
                                       "（可以把分离设备改为 CPU 后重试）")
             if progress:
                 if pct["value"] is not None:

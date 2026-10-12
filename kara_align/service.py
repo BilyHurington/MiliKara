@@ -1667,8 +1667,9 @@ def peaks(h: ProjectHandle, asset: AudioAsset, per_second: int = 200) -> dict:
 
 
 # a separation that takes longer than this has hung (e.g. the MPS backend): generous for slow CPUs
-SEPARATION_TIMEOUT_FACTOR = 5.0
-SEPARATION_TIMEOUT_EXTRA_S = 600.0
+# separation is stopped only when it has made no progress for this long (however long a slow
+# computer takes, as long as it keeps going)
+SEPARATION_STALL_S = 600.0
 
 
 def run_separation(h: ProjectHandle, preset: str, cancel: Optional[CancelToken] = None,
@@ -1697,10 +1698,9 @@ def run_separation(h: ProjectHandle, preset: str, cancel: Optional[CancelToken] 
     if out_dir.exists():
         shutil.rmtree(out_dir)  # never trust a possibly partial earlier run
     out_dir.mkdir(parents=True)
-    timeout_s = orig.duration_ms / 1000.0 * SEPARATION_TIMEOUT_FACTOR + SEPARATION_TIMEOUT_EXTRA_S
     try:
         result = separate(src, out_dir, preset, cancel=cancel, progress=progress, device=device,
-                          timeout_s=timeout_s)
+                          stall_s=SEPARATION_STALL_S)
         if cancel is not None:
             cancel.check()
         report = _jsonable(result.report)

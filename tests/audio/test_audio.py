@@ -302,8 +302,35 @@ def test_separator_pipes_are_drained_and_progress_parsed(tmp_path, monkeypatch):
     monkeypatch.setattr(S, "_CHILD_SCRIPT", fake)
     seen = []
     with pytest.raises(S.SeparationError):
-        S.separate(src, tmp_path / "out", "mdx-fast", progress=lambda f, m: seen.append((f, m)), timeout_s=60)
+        S.separate(src, tmp_path / "out", "mdx-fast", progress=lambda f, m: seen.append((f, m)), stall_s=60)
     assert any("%" in m for _, m in seen) or seen  # progress reported, no deadlock
+
+
+def test_separation_is_stopped_only_when_it_makes_no_progress(tmp_path, monkeypatch):
+    """A slow child that keeps reporting progress is waited for; a quiet one is stopped."""
+    import time
+
+    import soundfile as _sf
+
+    from kara_align.audio import separation as S
+
+    src = tmp_path / "song.wav"
+    _sf.write(src, np.zeros((4410, 2), dtype=np.float32), 44100)
+    monkeypatch.setattr(S, "ensure_available", lambda: "test")
+    # slow but going: a progress line every 0.2 s for 2 s, far longer than the 0.8 s allowed without one
+    slow = ("import sys, time\nfor i in range(10):\n    sys.stderr.write(f'\\r{i * 10:3d}%|#|'); sys.stderr.flush()\n"
+            "    time.sleep(0.2)\nsys.exit(3)\n")
+    monkeypatch.setattr(S, "_CHILD_SCRIPT", slow)
+    t0 = time.monotonic()
+    with pytest.raises(S.SeparationError, match="退出码 3"):  # ran to its end
+        S.separate(src, tmp_path / "out", "mdx-fast", stall_s=0.8)
+    assert time.monotonic() - t0 >= 1.8
+    # stuck: nothing written at all
+    monkeypatch.setattr(S, "_CHILD_SCRIPT", "import time\ntime.sleep(30)\n")
+    t0 = time.monotonic()
+    with pytest.raises(S.SeparationError, match="没有任何进展"):
+        S.separate(src, tmp_path / "out2", "mdx-fast", stall_s=0.8)
+    assert time.monotonic() - t0 < 10
 
 
 def test_write_stem_flac_and_float_fallback(tmp_path):

@@ -93,8 +93,8 @@ def test_separation_cache_folder_is_a_hash_and_has_a_timeout(tmp_path, monkeypat
     S.add_audio(h, _wav(tmp_path / "a.wav", seconds=2.0), "original")
     seen = {}
 
-    def fake(src, out_dir, preset, cancel=None, progress=None, device="auto", timeout_s=None):
-        seen.update(out_dir=Path(out_dir), timeout_s=timeout_s)
+    def fake(src, out_dir, preset, cancel=None, progress=None, device="auto", stall_s=None):
+        seen.update(out_dir=Path(out_dir), stall_s=stall_s)
         raise sep.SeparationError("stop here")
 
     monkeypatch.setattr(sep, "separate", fake)
@@ -103,7 +103,7 @@ def test_separation_cache_folder_is_a_hash_and_has_a_timeout(tmp_path, monkeypat
     root = store.cache_dir("separation")
     assert seen["out_dir"].parent == root and len(seen["out_dir"].name) == 32
     assert not seen["out_dir"].exists()  # a failed run leaves nothing behind
-    assert seen["timeout_s"] == pytest.approx(2.0 * S.SEPARATION_TIMEOUT_FACTOR + S.SEPARATION_TIMEOUT_EXTRA_S)
+    assert seen["stall_s"] == S.SEPARATION_STALL_S  # stopped only when it stops making progress
 
 
 # ------------------------------------------------------------------ S2 / S3 / S10 imports
