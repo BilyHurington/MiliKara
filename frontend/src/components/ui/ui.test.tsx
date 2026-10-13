@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { renderUI } from '@/test/helpers';
-import { NumberInput, SliderField } from './index';
+import { MultiToggle, NumberInput, SliderField } from './index';
 
 describe('NumberInput', () => {
   it('commits the typed number on blur', async () => {
@@ -122,5 +122,28 @@ describe('SliderField', () => {
     renderUI(<ControlledSlider onCommit={() => {}} />);
     const track = screen.getByRole('slider').closest('.min-w-40');
     expect(track).toHaveClass('flex-1');
+  });
+});
+
+// MultiToggle: several choices; the last one stays; a choice that became unavailable can be taken off.
+const OPTIONS = [
+  { value: 'original', label: '原唱' },
+  { value: 'instrumental', label: '伴唱', disabled: true },
+  { value: 'none', label: '无声', disabled: true },
+] as const;
+
+describe('MultiToggle', () => {
+  it('keeps one chosen, and lets a chosen but unavailable option be taken off', async () => {
+    const onChange = vi.fn();
+    const { rerender } = renderUI(<MultiToggle label="声音" value={['original']} onChange={onChange} options={[...OPTIONS]} />);
+    await userEvent.click(screen.getByRole('button', { name: '原唱' }));
+    expect(onChange).not.toHaveBeenCalled();  // the last one stays
+    expect(screen.getByRole('button', { name: '无声' })).toBeDisabled();
+    // 伴唱 was chosen before separation was turned off: shown pressed, and it can still be taken off
+    rerender(<MultiToggle label="声音" value={['original', 'instrumental']} onChange={onChange} options={[...OPTIONS]} />);
+    const inst = screen.getByRole('button', { name: '伴唱', pressed: true });
+    expect(inst).toBeEnabled();
+    await userEvent.click(inst);
+    expect(onChange).toHaveBeenLastCalledWith(['original']);
   });
 });

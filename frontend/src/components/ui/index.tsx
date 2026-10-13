@@ -468,7 +468,8 @@ export function Segmented<T extends string>({ value, onChange, options, size = '
   );
 }
 
-/** Several choices at once, in the look of Segmented; the last one chosen cannot be taken off. */
+/** Several choices at once, in the look of Segmented; the last one chosen cannot be taken off.
+ *  A disabled option can still be taken off when it is on (chosen before it became unavailable). */
 export function MultiToggle<T extends string>({ value, onChange, options, size = 'md', className, label }: {
   value: T[]; onChange: (v: T[]) => void; options: { value: T; label: ReactNode; disabled?: boolean; title?: string }[];
   size?: 'sm' | 'md'; className?: string; /** accessible name of the group */ label?: string;
@@ -486,7 +487,7 @@ export function MultiToggle<T extends string>({ value, onChange, options, size =
             key={o.value}
             type="button"
             aria-pressed={on}
-            disabled={o.disabled}
+            disabled={o.disabled && !on}
             title={o.title}
             onClick={() => toggle(o.value)}
             className={cn(

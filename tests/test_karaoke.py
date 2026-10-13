@@ -115,6 +115,9 @@ def test_a_katakana_reading_and_a_reading_in_brackets():
     assert [(c.base_text, c.ruby_text) for c in ch] == [("宿敵", "ライバル"), ("に", "")]  # brackets not drawn
     st.ruby.script = "romaji"
     assert A.build_chunks(line, _times(line), st, {})[0].ruby_text != "ライバル"
+    # no ruby over the word: the brackets are the only place the reading is written, so they stay
+    st.ruby.enabled = False
+    assert [c.base_text for c in A.build_chunks(line, _times(line), st, {})] == ["宿敵", "(ライバル)", "に"]
 
 
 def test_karaoke_tags_follow_unit_times_exactly():

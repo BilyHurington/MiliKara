@@ -233,3 +233,49 @@ def test_a_katakana_reading_typed_by_hand_stays_katakana():
     kana = next(s for s in ln.segments if s.surface == "ライバル")  # a katakana word: nothing to keep
     set_segment_reading(ln, kana.id, "ライバル")
     assert not kana.katakana
+
+
+def _rival(locked=False):
+    """宿敵(ライバル)だ with the AI's reply: ライバル on 宿敵, the brackets hidden."""
+    doc = LyricsDoc(lines=[Line(id="L1", text="宿敵(ライバル)だ")])
+    prepare_doc(doc)
+    if locked:
+        ln = doc.lines[0]
+        set_segment_reading(ln, next(x for x in ln.segments if x.surface == "宿敵").id, "しゅくてき")
+    b = build_prompt(doc)
+    segs = [{"surface": "宿敵", "reading": "ライバル"}, {"surface": "(ライバル)", "hidden": True}, {"surface": "だ", "reading": "だ"}]
+    patch = {"format": FMT_READING_PATCH, "version": 1, "snapshot": b.snapshot_id,
+             "lines": [{"id": "L1", "text": "宿敵(ライバル)だ", "segments": segs}]}
+    return doc, b, patch
+
+
+def test_brackets_set_aside_by_the_ai_survive_the_rule_readings():
+    doc, b, patch = _rival()
+    new, _ = apply_patch(doc, validate_patch(doc, patch, [b.roundtrip]))
+    prepare_doc(new, overwrite_rule=True)  # "规则注音" with its overwrite switch on
+    assert [(s.surface, s.reading, s.hidden) for s in new.lines[0].segments] == [
+        ("宿敵", "らいばる", False), ("(ライバル)", None, True), ("だ", "だ", False)]
+
+
+def test_brackets_after_a_confirmed_reading_stay_shown():
+    doc, b, patch = _rival(locked=True)
+    rep = validate_patch(doc, patch, [b.roundtrip])
+    assert not rep.lines[0].diff[1].hidden  # the preview says so too
+    new, _ = apply_patch(doc, rep)
+    s = new.lines[0].segments
+    assert (s[0].reading, s[1].surface, s[1].hidden) == ("しゅくてき", "(ライバル)", False)
+
+
+@pytest.mark.parametrize("bad", [
+    {"surface": "(ライバル)", "hidden": True, "reading": 5},  # not text: rejected, no crash
+    {"surface": "()", "hidden": True},  # nothing inside
+])
+def test_malformed_hidden_brackets_are_rejected(bad):
+    doc, b, patch = _rival()
+    if bad["surface"] == "()":
+        doc = LyricsDoc(lines=[Line(id="L1", text="宿敵()だ")])
+        prepare_doc(doc)
+        b = build_prompt(doc)
+        patch["snapshot"], patch["lines"][0]["text"] = b.snapshot_id, "宿敵()だ"
+    patch["lines"][0]["segments"][1] = bad
+    assert validate_patch(doc, patch, [b.roundtrip]).lines[0].status == "invalid"

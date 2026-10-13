@@ -275,10 +275,11 @@ def _validate_segments(line: Line, raw_segs: Any, reasons: list[str]) -> list[di
         if rs.get("hidden") is True:
             # 宿敵(ライバル): the brackets hold the reading of the word before them
             inner = surface.strip()
-            if (reading or "").strip() or units:
+            if (reading is not None and (not isinstance(reading, str) or reading.strip())) or units:
                 reasons.append(f"segment[{i}] 设为 hidden 时不能有读音（{surface}）")
                 continue
-            if not (inner[:1] in "(（" and inner[-1:] in ")）") or not out or not out[-1]["reading"]:
+            if (len(inner) < 3 or inner[0] not in "(（" or inner[-1] not in ")）"
+                    or not out or not out[-1]["reading"]):
                 reasons.append(f"segment[{i}] 只有紧跟在有读音的词后面的括号可以设为 hidden（{surface}）")
                 continue
             out.append({"surface": surface, "reading": None, "units": None, "lang": "ja", "candidates": [],
@@ -451,6 +452,7 @@ def validate_patch(doc: LyricsDoc, patch_obj: Any, roundtrips: Sequence[AiRoundt
 def _diff(line: Line, segs: list[dict]) -> list[SegmentDiff]:
     cur_spans = {(a, b): s for a, b, s in _spans(line.segments)}
     out = []
+    locked_before = False  # (as apply_patch: brackets after a confirmed word are not hidden)
     for a, b, s in _spans(segs):
         cur = cur_spans.get((a, b))
         new_units = s["units"] if s["units"] is not None else (
@@ -459,7 +461,8 @@ def _diff(line: Line, segs: list[dict]) -> list[SegmentDiff]:
         old_units = [u.reading for u in cur.units] if cur else []
         old_reading = cur.reading if cur else None
         locked = bool(cur and _is_locked(cur))
-        kata, hidden = bool(s.get("katakana")), bool(s.get("hidden"))
+        kata, hidden = bool(s.get("katakana")), bool(s.get("hidden")) and not locked_before
+        locked_before = locked or (locked_before and bool(s.get("hidden")))
         changed = (old_reading != s["reading"] or old_units != new_units or cur is None
                    or (cur.katakana, cur.hidden) != (kata, hidden))
         out.append(SegmentDiff(surface=s["surface"], old_reading=old_reading, new_reading=s["reading"],
@@ -490,13 +493,18 @@ def apply_patch(doc: LyricsDoc, report: PatchReport, *, include_line_ids: Option
             continue
         cur_spans = {(a, b): s for a, b, s in _spans(ln.segments)}
         new_segs: list[Segment] = []
+        locked_before = False  # the word before kept its confirmed reading
         for a, b, spec in _spans(lr.segments):
             cur = cur_spans.get((a, b))
             if cur is not None and _is_locked(cur):
                 # the reading stays as confirmed; the line-break hint is display only and still taken
                 new_segs.append(cur.model_copy(update={"wrap_before": bool(spec.get("wrap_before"))}))
+                locked_before = True
                 continue
             seg = _segment_from_spec(spec)
+            if seg.hidden and locked_before:
+                seg.hidden = False  # its word keeps another reading: the brackets stay shown
+            locked_before = locked_before and seg.hidden
             if cur is not None:
                 seg.id = cur.id
                 if [u.reading for u in cur.units] == [u.reading for u in seg.units]:

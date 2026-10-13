@@ -65,6 +65,14 @@ def test_regroup_merges_okurigana_keeping_units_and_readings():
     assert not regroup_words(ln)  # idempotent
 
 
+def test_regroup_keeps_a_katakana_reading_and_a_line_break():
+    ln = _old_style_line("好きになってく")
+    ln.segments[0].katakana = True  # (as typed: スキ)
+    ln.segments[0].wrap_before = True
+    assert regroup_words(ln)
+    assert ln.segments[0].surface == "好き" and ln.segments[0].katakana and ln.segments[0].wrap_before
+
+
 def test_regroup_never_touches_confirmed_or_splits_kanji_readings():
     ln = _old_style_line("今君へと")
     assert [s.surface for s in ln.segments][:2] == ["今", "君"]

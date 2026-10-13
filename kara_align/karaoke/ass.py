@@ -261,11 +261,17 @@ def build_chunks(line: Line, times: dict[str, tuple[Optional[int], Optional[int]
 
         return range_singers(chars, pos, pos + n, line.text if len(line.text) == len(chars) else None)
 
+    def shows_ruby(seg: Segment) -> bool:
+        return (ruby_cfg.enabled and seg.lang == "ja" and bool(seg.units)
+                and (has_kanji(seg.surface) or ruby_cfg.target == "all" or any(c.isdigit() for c in seg.surface)))
+
+    ruby_before = False  # the word before shows its ruby
     for seg in line.segments:
-        if seg.hidden:  # a reading in brackets: its word shows it as ruby
+        if seg.hidden and ruby_before:  # a reading in brackets: the word before shows it as ruby
             pos += len(seg.surface)
             continue
-        if not seg.units:
+        ruby_before = shows_ruby(seg)
+        if not seg.units:  # (also hidden brackets when the ruby is off: the reading stays readable)
             chunks.append(Chunk([Part(seg.surface, None, None)], wrap_before=seg.wrap_before,
                                 singers=sung_by(len(seg.surface))))
             pos += len(seg.surface)
@@ -290,8 +296,7 @@ def build_chunks(line: Line, times: dict[str, tuple[Optional[int], Optional[int]
                 base = [Part(surface, min(starts) if starts else None, max(ends) if ends else None)]
             ruby: list[Part] = []
             # "仅汉字" counts digits as kanji: how 24 is sung is not written either
-            wants = ruby_cfg.enabled and seg.lang == "ja" and (kanji or ruby_cfg.target == "all"
-                                                                or any(c.isdigit() for c in surface))
+            wants = shows_ruby(seg) and (kanji or ruby_cfg.target == "all" or any(c.isdigit() for c in surface))
             if wants:
                 # a reading the lyrics write in katakana (宿敵 → ライバル) stays katakana over hiragana ruby
                 script = "katakana" if seg.katakana and ruby_cfg.script == "hiragana" else ruby_cfg.script

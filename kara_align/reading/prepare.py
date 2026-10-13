@@ -41,7 +41,8 @@ def _surface(line: Line) -> str:
 
 
 def _is_protected(seg: Segment) -> bool:
-    return seg.confirmed or seg.reading_source in PROTECTED_SOURCES
+    # (brackets the AI set aside as the reading of the word before them: not spelled again by rule)
+    return seg.confirmed or seg.reading_source in PROTECTED_SOURCES or seg.hidden
 
 
 @dataclass
@@ -172,6 +173,8 @@ def regroup_words(line: Line) -> bool:
             reading_source="ai" if "ai" in sources else ("manual" if "manual" in sources else "rule"),
             uncertain=any(o.uncertain for o in uniq), candidates=cands,
             note="; ".join(dict.fromkeys(o.note for o in uniq if o.note)),
+            # display only, carried over: a katakana reading stays katakana, a line break stays before it
+            katakana=any(o.katakana for o in uniq), wrap_before=uniq[0].wrap_before,
         )
         if kanji_owner is not None:
             seg.id = kanji_owner.id
