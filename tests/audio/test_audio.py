@@ -348,3 +348,20 @@ def test_write_stem_flac_and_float_fallback(tmp_path):
     assert p2.suffix == ".wav"
     z, _ = load_audio(p2)
     assert np.allclose(z, loud, atol=1e-6)
+
+
+def test_cpu_only_separation_hides_the_gpu_without_breaking_torch(tmp_path):
+    """"仅 CPU": the separator's child reports no GPU, and torch._dynamo (imported on the ONNX models'
+    path, MDX-Net) still loads — it reads __wrapped__ from the functions the child replaces."""
+    import json
+    import subprocess
+    import sys
+
+    from kara_align.audio import separation as S
+
+    head = S._CHILD_SCRIPT.split("from audio_separator")[0]
+    check = head + "import torch._dynamo\nprint(torch.cuda.is_available(), torch.backends.mps.is_available())\n"
+    r = subprocess.run([sys.executable, "-c", check, json.dumps({"device": "cpu"})],
+                       capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stderr[-2000:]
+    assert r.stdout.split() == ["False", "False"]

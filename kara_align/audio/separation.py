@@ -182,18 +182,29 @@ _PCT_RE = re.compile(r"(\d{1,3})%\|")
 _CHILD_SCRIPT = r"""
 import json, sys
 args = json.loads(sys.argv[1])
+
+
+def hide(owner, name="is_available"):
+    # an accelerator the separator must not use: reported unavailable.  The original stays reachable as
+    # __wrapped__ (torch._dynamo, which the ONNX models' path imports, reads it from these functions)
+    real = getattr(owner, name)
+    off = lambda *a, **k: False  # noqa: E731
+    off.__wrapped__ = getattr(real, "__wrapped__", real)
+    setattr(owner, name, off)
+
+
 if args.get("device") == "cpu":
     # hide accelerators from the separator (its MPS path can hang on some setups)
     import torch
-    torch.backends.mps.is_available = lambda: False
-    torch.cuda.is_available = lambda: False
+    hide(torch.backends.mps)
+    hide(torch.cuda)
 else:
     import torch
     from kara_align.gpu import cuda_device
     if torch.cuda.is_available():
         dev = cuda_device(torch)
         if dev is None:  # AMD (ROCm): the installed torch runs on none of the GPUs here
-            torch.cuda.is_available = lambda: False
+            hide(torch.cuda)
         elif dev != "cuda":  # the separator runs on "cuda", the current device
             torch.cuda.set_device(torch.device(dev))
 from audio_separator.separator import Separator
