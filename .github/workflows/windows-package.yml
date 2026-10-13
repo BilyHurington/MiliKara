@@ -141,14 +141,19 @@ jobs:
           $py = "$env:APP\python\python.exe"
           if ($env:VARIANT -eq "rocm") {
             # (it brings its own HIP runtime: the user needs only the graphics driver).  torchvision from AMD
-            # too: the separator needs it (onnx2torch), and PyPI's pins another torch version
-            uv pip install --python $py "torch[$env:ROCM_DEVICES]" torchvision --index-url https://stable.repo.amd.com/rocm/whl-next/
+            # too: the separator needs it (onnx2torch), and PyPI's pins another torch version.  The one built
+            # for torch 2.14 is a pre-release (0.29.0a0); the stable 0.28 is for the torch before and its
+            # operators do not load ("torchvision::nms does not exist" when transformers imports it)
+            uv pip install --python $py "torch[$env:ROCM_DEVICES]" "torchvision>=0.29.0a0" --index-url https://stable.repo.amd.com/rocm/whl-next/
           } else {
             $index = if ($env:VARIANT -eq "cuda") { "https://download.pytorch.org/whl/cu128" } else { "https://download.pytorch.org/whl/cpu" }
             uv pip install --python $py torch --index-url $index
           }
           uv pip install --python $py ".[ml,separation]"
           & $py -c "import torch, transformers, audio_separator, kara_align; print('torch', torch.__version__, 'cuda', torch.version.cuda, 'hip', getattr(torch.version, 'hip', None), '| transformers', transformers.__version__)"
+          # torchvision's operators load (a torchvision built for another torch does not), and the aligner's
+          # model class imports (transformers pulls torchvision in): checked here, not when the models load
+          & $py -c "import torch, torchvision, torchvision.ops; from transformers import Wav2Vec2ForCTC; torchvision.ops.nms(torch.zeros(1, 4), torch.zeros(1), 0.5); print('torchvision', torchvision.__version__)"
           # only needed to build extensions against torch / for the removed scripts
           Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$env:APP\python\Lib\site-packages\torch\include", "$env:APP\python\Scripts"
           Get-ChildItem "$env:APP\python\Lib\site-packages\torch\lib" -Filter *.lib | Remove-Item -Force
