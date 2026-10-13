@@ -57,6 +57,7 @@ function serverLike() {
     [`POST /api/projects/${PID}/`]: viewResp,
     [`PATCH /api/projects/${PID}`]: viewResp,
     [`PUT /api/projects/${PID}/lines/`]: viewResp,
+    'GET /api/diagnostics': () => ({ text: 'DIAGNOSTICS' }),
     'GET /api/jobs/': () => ({ id: 'job1', kind: 'align', project_id: PID, status: 'running', progress: 0.4, message: '解码', error: null, created: 'z', finished: null, output: null }),
   });
 }
@@ -260,6 +261,23 @@ describe('interactions', () => {
     await userEvent.click(screen.getByRole('button', { name: '(ライバル)' }));
     await userEvent.click(await screen.findByRole('button', { name: '显示' }));
     await waitFor(() => expect(api.find('PUT', '/segments/s-br/hidden')[0]?.body).toEqual({ hidden: false }));
+  });
+
+  it('enhance: a failed separation offers its diagnostics to copy', async () => {
+    localStorage.setItem('kara.enhanceTab', 'separation');
+    seedStore('enhance');
+    const api = serverLike();
+    const pid = useApp.getState().pid!;
+    const failed = { id: 'jsep', kind: 'separate', project_id: pid, status: 'failed', progress: 0.4, message: '',
+      error: '人声分离超过 37 分钟没有完成，已停止', created: 'z', finished: 'z', output: null } as const;
+    useApp.setState((st) => ({ jobHistory: { ...st.jobHistory, jsep: failed as any } }));
+    const writeText = vi.fn(async () => {});
+    Object.assign(navigator, { clipboard: { writeText } });
+    renderUI(<EnhancePage />);
+    expect(await screen.findByText(/失败原因：人声分离超过 37 分钟/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /复制诊断信息/ }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('DIAGNOSTICS'));
+    expect(api.find('GET', '/api/diagnostics')[0].url).toContain('job=jsep');
   });
 
   it('enhance: the three tasks are tabs with their status, and a draft survives switching', async () => {

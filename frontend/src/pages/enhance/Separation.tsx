@@ -8,6 +8,7 @@ import { cn, fmtMs, ROLE_LABEL } from '@/lib/format';
 import type { AudioAsset, Job } from '@/lib/types';
 import { cancelJob, isOpenProject, ppath, refreshProject, run, trackJob, useApp, useJob, useProject, useView } from '@/store/app';
 import { Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, Progress, Segmented } from '@/components/ui';
+import { DiagnosticsButton } from '@/components/DiagnosticsButton';
 
 export function SeparationCard() {
   const project = useProject()!;
@@ -127,6 +128,7 @@ function JobStatus({ job }: { job: Job }) {
       <div className={cn('mt-1.5 text-xs break-words', job.status === 'failed' ? 'text-danger' : 'text-muted')}>
         {job.status === 'failed' ? `失败原因：${job.error ?? job.message}（不会自动回退为原曲）` : job.message}
       </div>
+      {job.status === 'failed' && <div className="mt-1"><DiagnosticsButton jobId={job.id} /></div>}
     </div>
   );
 }
