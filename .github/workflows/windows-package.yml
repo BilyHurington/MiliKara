@@ -205,6 +205,9 @@ jobs:
       - name: Smoke test (whole song through the launcher, from a path with spaces and Chinese)
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
+          # the AMD package: no AMD card on the runner, and its torch on the CPU is far too slow to separate
+          # (see smoke_test.py); everything else runs
+          if ($env:VARIANT -eq "rocm") { $env:SMOKE_SEPARATION = "0" }
           $odd = "$env:BUILD\中文 路径"
           New-Item -ItemType Directory -Force $odd | Out-Null
           Move-Item $env:APP "$odd\MiliKara"

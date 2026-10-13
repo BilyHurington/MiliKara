@@ -65,10 +65,16 @@ def main() -> None:
     kk("audio", str(proj), str(song))
     # SMOKE_DEVICE=cpu: a machine without a usable GPU that still reports one (macOS CI: MPS in a VM)
     device = os.environ.get("SMOKE_DEVICE", "auto")
-    kk("separate", str(proj), "--device", device)
+    # SMOKE_SEPARATION=0: not separated here, aligned on the song itself — the AMD (ROCm) package on a
+    # runner without an AMD card, where its torch computes on the CPU far too slowly (one chunk of the
+    # separator takes over 10 minutes there).  The separation itself is the CPU package's, checked there.
+    separate = os.environ.get("SMOKE_SEPARATION", "1") != "0"
+    if separate:
+        kk("separate", str(proj), "--device", device)
     kk("calibrate", str(proj), "--confirm-zero")
     kk("readings", str(proj))
-    kk("align", str(proj), "--role", "vocals", *(["--set", f"device={device}"] if device != "auto" else []))
+    kk("align", str(proj), "--role", "vocals" if separate else "original",
+       *(["--set", f"device={device}"] if device != "auto" else []))
     out = kk("burn", str(proj), "--background", "black")
     video = Path(json.loads(out)["file"])
     assert video.is_file() and video.stat().st_size > 10_000, video
