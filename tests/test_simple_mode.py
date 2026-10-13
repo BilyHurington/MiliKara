@@ -855,7 +855,14 @@ def test_automatic_offset_asks_when_unsure_and_starts_from_its_estimate(tmp_path
     assert st["separate"] == "skipped" and st["calibrate"] == "waiting" and st["align"] == "pending"
     auto = t.calibration["auto"]
     assert auto["shift_ms"] == -500 and not auto["confident"] and "太少" in auto["reason"]
-    # a restart while it waits: still waiting
+    # a restart while it waits: still waiting — even when its own save has not reached the disk yet
+    # (Windows CI: the queue was stopped in between; the file still said "running")
+    f = tmp_path / "projects" / ".tasks" / "tasks.json"
+    data = json.loads(f.read_text(encoding="utf-8"))
+    for x in data:
+        if x["id"] == t.id:
+            x["status"] = "running"
+    f.write_text(json.dumps(data), encoding="utf-8")
     q.shutdown()
     q = P.TaskQueue(S.Workspace(tmp_path / "projects"))
     assert q.get(t.id).status == "waiting"

@@ -659,6 +659,9 @@ class TaskQueue:
                 c.cancel()
             self._wake.notify_all()
         self._prep_pool.shutdown(wait=False, cancel_futures=True)
+        # what is current now reaches the disk: a task that has just begun waiting (its own save may
+        # still be on the way) is still waiting after a restart, not taken for interrupted
+        self._save()
         self._release()
 
     # ---- worker
