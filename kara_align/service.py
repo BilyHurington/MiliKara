@@ -736,6 +736,27 @@ def merge_lines(h: ProjectHandle, line_ids: list[str]) -> None:
         h.save()
 
 
+def delete_line(h: ProjectHandle, line_id: str) -> None:
+    """Remove one line (e.g. an LRC's closing "(終わり)" that is not sung).  A timed line still marks
+    where the sung line before it ends: that line gets its time as its end, unless it has one.  The
+    calibration keeps its shift; marks on the line go."""
+    with h.lock:
+        doc = h.project.lyrics
+        ln = _line(h, line_id)
+        i = doc.lines.index(ln)
+        prev = doc.lines[i - 1] if i > 0 else None
+        if (prev is not None and ln.imported_start_ms is not None and prev.kind == "lyric" and prev.sing
+                and prev.imported_end_ms is None
+                and (prev.imported_start_ms is None or prev.imported_start_ms < ln.imported_start_ms)):
+            prev.imported_end_ms = ln.imported_start_ms
+        del doc.lines[i]
+        cal = h.project.calibration
+        if cal.reference_line_id == line_id:
+            cal.reference_line_id = None
+        cal.checks = [c for c in cal.checks if c.line_id != line_id]
+        h.save()
+
+
 def split_line(h: ProjectHandle, line_id: str, at: int) -> None:
     from .lyrics.pairing import split_line as _split
     from .reading.prepare import prepare_doc

@@ -31,6 +31,11 @@ function serverLike() {
     [`GET /api/projects/${PID}/export/`]: (c) => ({ filename: 'aligned-unit.lrc', media_type: 'text/plain', content: `[00:02.00]<00:02.00>君 ${c.url}`, warnings: ['增强 LRC 以片段为单位合并'] }),
     [`GET /api/projects/${PID}/audio/`]: () => ({ per_second: 200, mins: [0], maxs: [0], duration_ms: 16000, sample_rate: 44100 }),
     [`GET /api/projects/${PID}`]: viewResp,
+    [`DELETE /api/projects/${PID}/lines/`]: (c) => {
+      const v = fixturePV();
+      v.project.lyrics.lines = v.project.lyrics.lines.filter((l) => !c.url.endsWith(`/lines/${l.id}`));
+      return v;
+    },
     'GET /api/projects': () => [{ id: PID, name: 'proj', mode: 'lrc', updated: pv.project.updated }],
     [`PUT /api/projects/${PID}/results/`]: (c) => {
       const r = currentResult()!;
@@ -210,6 +215,23 @@ describe('interactions', () => {
     expect(api.find('POST', '/lyrics/parse')[0].body).toMatchObject({ text: '[00:01.00]きみと', origin: 'paste' });
     await userEvent.click(await screen.findByRole('button', { name: /应用到项目/ }));
     await waitFor(() => expect(api.find('POST', '/lyrics/apply')[0]?.body).toEqual({ preview_id: 'pv1' }));
+  });
+
+  it('input and enhance: a line can be deleted (after a second click)', async () => {
+    localStorage.removeItem('kara.enhanceTab');
+    for (const [step, Page] of [['input', InputPage], ['enhance', EnhancePage]] as const) {
+      seedStore(step);
+      const api = serverLike();
+      const pv = fixturePV();
+      const { unmount } = renderUI(<Page />);
+      await userEvent.click(await screen.findByRole('button', { name: '删除第 1 行' }));
+      expect(api.find('DELETE', '/lines/')).toHaveLength(0);
+      await userEvent.click(screen.getByRole('button', { name: '删除' }));
+      await waitFor(() => expect(api.find('DELETE', '/lines/')).toHaveLength(1));
+      expect(api.find('DELETE', '/lines/')[0].url).toContain(`/lines/${pv.project.lyrics.lines[0].id}`);
+      await waitFor(() => expect(useApp.getState().pv!.project.lyrics.lines).toHaveLength(pv.project.lyrics.lines.length - 1));
+      unmount();
+    }
   });
 
   it('enhance: prompt → validate', async () => {

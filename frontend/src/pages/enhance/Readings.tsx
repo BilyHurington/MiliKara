@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { cn, toKatakana } from '@/lib/format';
 import type { Line, ProjectView, Segment } from '@/lib/types';
 import { ppath, run, setPV, toast, useProject, useView } from '@/store/app';
+import { DeleteLineButton } from '@/components/DeleteLineButton';
 import {
   Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, Dialog, EmptyState, Field, Input, Segmented, Switch, Tip,
 } from '@/components/ui';
@@ -140,7 +141,7 @@ export function ReadingsCard() {
 function LineRow({ line, index, onEdit }: { line: Line; index: number; onEdit: (s: Segment) => void }) {
   const noUnits = line.segments.every((s) => !readable(s) && !s.hidden);
   return (
-    <li className="flex gap-4 px-4 py-3 hover:bg-surface-2/40">
+    <li className="group flex gap-4 px-4 py-3 hover:bg-surface-2/40">
       <span className="tabular w-7 shrink-0 pt-2 text-right text-xs text-subtle">{index}</span>
       <div className="min-w-0 flex-1">
         {noUnits ? (
@@ -155,6 +156,9 @@ function LineRow({ line, index, onEdit }: { line: Line; index: number; onEdit: (
           </div>
         )}
         {line.translation && <div className="mt-1.5 text-xs text-subtle">{line.translation}</div>}
+      </div>
+      <div className="shrink-0 self-start pt-1 opacity-40 transition group-hover:opacity-100 focus-within:opacity-100">
+        <DeleteLineButton line={line} index={index} />
       </div>
     </li>
   );

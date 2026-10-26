@@ -1,4 +1,4 @@
-// The project's current lyric lines: inline edit, kind / sing, anchors, merge, split.
+// The project's current lyric lines: inline edit, kind / sing, anchors, merge, split, delete.
 
 import { Anchor, Combine, ListOrdered, Scissors } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -11,6 +11,7 @@ import { ppath, run, setPV, toast, useProject, useView } from '@/store/app';
 import {
   Badge, Button, Callout, Card, CardBody, CardHeader, Dialog, EmptyState, Field, IconButton, NumberInput, Select, Switch, Table, Td, Th, Tip,
 } from '@/components/ui';
+import { DeleteLineButton } from '@/components/DeleteLineButton';
 import { KIND_LABEL } from './PreviewPanel';
 
 export function LinesTable() {
@@ -49,7 +50,7 @@ export function LinesTable() {
       <CardHeader
         title="当前歌词"
         icon={<ListOrdered className="size-4" />}
-        description="重复副歌保留为独立行实例。可直接编辑文字、类型与是否参与对齐；合并 / 拆分保留来源，拆出的子行不会被分配伪时间。"
+        description="重复副歌保留为独立行实例。可直接编辑文字、类型与是否参与对齐；合并 / 拆分保留来源，拆出的子行不会被分配伪时间。不唱的行（如结尾的“(終わり)”）可以删除。"
         actions={lines.length > 0 ? (
           <>
             <Badge tone="accent">{counts.sung} 行参与对齐</Badge>
@@ -76,7 +77,7 @@ export function LinesTable() {
                 <Th>文本</Th>
                 <Th className="w-28">类型</Th>
                 <Th className="w-16">对齐</Th>
-                <Th className="w-20 text-right">操作</Th>
+                <Th className="w-24 text-right">操作</Th>
               </tr>
             </thead>
             <tbody>
@@ -123,6 +124,7 @@ export function LinesTable() {
                         <IconButton label="拆分此行" size="xs" onClick={() => setSplitLine(l)} disabled={[...l.text].length < 2}>
                           <Scissors className="size-3.5" />
                         </IconButton>
+                        <DeleteLineButton line={l} index={i + 1} />
                       </div>
                     </Td>
                   </tr>

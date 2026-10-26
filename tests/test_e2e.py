@@ -341,3 +341,33 @@ def test_calibration_checks_and_mismatch_warning(tmp_path):
     view = S.project_view(h)["view"]
     assert len(h.project.calibration.checks) == 1
     assert any(i["severity"] == "warning" for i in view["calibration_issues"])
+
+
+def test_deleting_a_closing_line_keeps_where_the_last_line_ends(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from kara_align.align.calibration import effective_line_ends
+    from kara_align.web.server import create_app
+
+    client = TestClient(create_app(tmp_path / "projects"))
+    pid = client.post("/api/projects", json={"name": "d", "mode": "lrc"}).json()["project"]["id"]
+    prev = client.post(f"/api/projects/{pid}/lyrics/parse", json={"text": LRC + "[00:05.20](終わり)\n", "origin": "paste"}).json()
+    lines = client.post(f"/api/projects/{pid}/lyrics/apply", json={"preview_id": prev["preview_id"]}).json()["project"]["lyrics"]["lines"]
+    last, closing = lines[-2]["id"], lines[-1]["id"]
+    v = client.post(f"/api/projects/{pid}/calibration/mark", json={"line_id": closing, "marked_ms": 4750}).json()
+    shift = v["project"]["calibration"]["user_shift_ms"]
+    assert v["project"]["calibration"]["reference_line_id"] == closing
+    r = client.delete(f"/api/projects/{pid}/lines/{closing}")
+    assert r.status_code == 200, r.text
+    assert [ln["text"] for ln in r.json()["project"]["lyrics"]["lines"]][-2:] == ["きみと", "あるいた"]
+    h = S.open_dir(tmp_path / "projects" / pid)
+    # its time is where the line before it ends; the calibration keeps its shift
+    assert h.project.lyrics.lines[-1].imported_end_ms == 5200
+    cal = h.project.calibration
+    assert cal.user_shift_ms == shift and cal.reference_line_id is None
+    assert effective_line_ends(h.project.lyrics, cal)[last] == 5200 - 500 + shift
+    # deleting あるいた: きみと ends where it began; an unknown line is an error
+    client.delete(f"/api/projects/{pid}/lines/{last}")
+    h = S.open_dir(tmp_path / "projects" / pid)
+    assert h.project.lyrics.lines[-1].imported_end_ms == 3500
+    assert client.delete(f"/api/projects/{pid}/lines/nope").status_code in (400, 404)

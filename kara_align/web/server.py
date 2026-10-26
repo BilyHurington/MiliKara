@@ -748,6 +748,12 @@ def create_app(root: Optional[Path] = None, jobs: Optional[JobManager] = None,
         guard(S.update_line, h, line_id, **body.model_dump(exclude_none=True))
         return view(h)
 
+    @app.delete("/api/projects/{pid}/lines/{line_id}")
+    def delete_line(pid: str, line_id: str):
+        h = handle(pid)
+        guard(S.delete_line, h, line_id)
+        return view(h)
+
     @app.post("/api/projects/{pid}/lines/merge")
     def merge(pid: str, body: LineIdsBody):
         h = handle(pid)

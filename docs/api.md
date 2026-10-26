@@ -164,6 +164,7 @@ to 0 with a message (undo: `calibration/undo`). QQ Music's `//` placeholder line
 | Method | Path | Body | Response |
 | --- | --- | --- | --- |
 | PATCH | `/api/projects/{pid}/lines/{line_id}` | `{text?, sing?, kind?, translation?, voice?, countdown?: "auto"\|"on"\|"off"}` | `ProjectView` (a line edited, or switched back to a sung lyric without units, gets rule readings at once) |
+| DELETE | `/api/projects/{pid}/lines/{line_id}` | – | `ProjectView`: the line removed (results become outdated as after any lyric edit). A timed line's start becomes the end (`imported_end_ms`) of the sung line right before it when that has none; the calibration keeps its shift (`reference_line_id` cleared if it was this line, its check marks dropped) |
 | POST | `/api/projects/{pid}/lines/merge` | `{line_ids}` | `ProjectView` |
 | POST | `/api/projects/{pid}/lines/{line_id}/split` | `{at: int (char index)}` | `ProjectView` |
 | PUT | `/api/projects/{pid}/lines/{line_id}/anchor` | `{abs_ms: int\|null, hard: bool, tolerance_ms}` | `ProjectView` |
