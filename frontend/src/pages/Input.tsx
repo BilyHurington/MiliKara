@@ -8,6 +8,7 @@ import { AudioCard } from './input/AudioCard';
 import { LinesTable } from './input/LinesTable';
 import { LyricsInputCard } from './input/LyricsInputCard';
 import { PairingCard } from './input/PairingCard';
+import { INTRO } from '@/lib/guide';
 
 export function InputPage() {
   const project = useProject()!;
@@ -21,7 +22,7 @@ export function InputPage() {
       <PageHeader
         eyebrow="第 2 步"
         title="音频与歌词"
-        description="上传原曲并输入已知歌词。歌词、LRC、prepared.json 等文本都支持直接粘贴或上传文件，解析后预览确认才会应用；解析失败不会覆盖原项目。"
+        description={INTRO.input}
         actions={(
           <Button variant={ready ? 'primary' : 'secondary'} onClick={() => setStep('enhance')} icon={<ArrowRight className="size-4" />}>
             下一步：注音与分离

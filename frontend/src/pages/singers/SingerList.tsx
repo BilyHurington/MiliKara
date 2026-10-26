@@ -14,6 +14,7 @@ import { deleteSingerPreset, loadSingerPresets, saveSingerPreset } from '@/store
 import { Button, Card, CardBody, CardHeader, ConfirmButton, Input, NumberInput, Segmented, Select, Switch, Tip } from '@/components/ui';
 import { ColorField } from '@/components/karaoke/StylePanel';
 import { PictureField, pictureUrl } from '@/components/karaoke/PictureField';
+import { HelpButton } from '@/components/guide/Help';
 
 type Detail = 'color_unsung' | 'color_sung' | 'outline_color' | 'glow_unsung' | 'glow_sung';
 const DETAILS: [Detail, keyof SingerColors, string][] = [
@@ -71,7 +72,7 @@ export function SingerList({ singers, onChange, onRemove, onUsePreset, usage, gl
 
   return (
     <Card>
-      <CardHeader icon={<Users className="size-4" />} title="演唱者"
+      <CardHeader icon={<Users className="size-4" />} title="演唱者" help={<HelpButton k="singers.list" />}
         description="每人选一个主色，未唱、描边、荧光的颜色会自动搭配。右边的方块是快捷键，点一下再按新的键可以修改。" />
       <CardBody className="space-y-3">
         <PresetBar singers={singers} onUse={onUsePreset} />

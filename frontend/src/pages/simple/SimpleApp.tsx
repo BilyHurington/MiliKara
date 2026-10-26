@@ -10,6 +10,7 @@ import { UpdateBadge } from '@/components/shell/UpdateBadge';
 import { ErrorBoundary } from '@/components/shell/ErrorBoundary';
 import { SimpleHome } from './SimpleHome';
 import { SimpleSettings } from './SimpleSettings';
+import { HelpButton } from '@/components/guide/Help';
 
 export function SimpleApp() {
   const page = useSimple((s) => s.page);
@@ -61,6 +62,7 @@ export function SimpleApp() {
             className="focus-ring flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-muted transition hover:bg-surface-2 hover:text-fg">
             <SlidersHorizontal className="size-4" />详细模式
           </button>
+          <HelpButton k="ui.modes" />
           <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="切换主题"
             className="focus-ring grid size-8 place-items-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-fg">
             {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}

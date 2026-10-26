@@ -14,6 +14,7 @@ import { DiagnosticsButton } from '@/components/DiagnosticsButton';
 import { loadStorage, StorageDialog } from '@/components/StorageDialog';
 import { StylePanel } from '@/components/karaoke/StylePanel';
 import { arrowNav, Button, Callout, Card, CardBody, CardHeader, Field, Segmented, Select, Spinner, Switch } from '@/components/ui';
+import { HelpButton, resetTips } from '@/components/guide/Help';
 
 type Simple = AppSettings['simple'];
 
@@ -102,7 +103,7 @@ export function SimpleSettings() {
         <div className="min-w-0 space-y-6">
           {tab === 'ai' && (
             <Card>
-              <CardHeader icon={<Bot className="size-4" />} title="AI 注音" description="用 AI 检查每个字的读音（例如「今君」读 いま きみ，「真新」读 まっさら）。读音越准，对齐越准。" />
+              <CardHeader icon={<Bot className="size-4" />} title="AI 注音" help={<HelpButton k="settings.ai" />} description="用 AI 检查每个字的读音（例如「今君」读 いま きみ，「真新」读 まっさら）。读音越准，对齐越准。" />
               <CardBody className="space-y-4">
                 <AiSettingsForm />
               </CardBody>
@@ -110,7 +111,7 @@ export function SimpleSettings() {
           )}
           {tab === 'separation' && (
             <Card>
-              <CardHeader icon={<Scissors className="size-4" />} title="人声分离" description="先把人声和伴奏分开：对齐更准，也能生成降低人声的伴唱视频。最耗时的一步（GPU / Apple 芯片约 1–3 分钟）。" />
+              <CardHeader icon={<Scissors className="size-4" />} title="人声分离" help={<HelpButton k="settings.separation" />} description="先把人声和伴奏分开：对齐更准，也能生成降低人声的伴唱视频。最耗时的一步（GPU / Apple 芯片约 1–3 分钟）。" />
               <CardBody className="space-y-4">
                 {info && !info.separation_available && (
                   <Callout tone="warn" title="未安装分离组件">会跳过这一步，使用原曲对齐。安装后重启服务：<code className="font-mono text-xs">uv pip install -e ".[separation]"</code></Callout>
@@ -138,7 +139,7 @@ export function SimpleSettings() {
           )}
           {tab === 'calibration' && (
             <Card>
-              <CardHeader icon={<Crosshair className="size-4" />} title="歌词开头对齐" description="视频的声音经常和 LRC 歌词里的时间差一段（片头、不同版本）。每个 LRC 任务需要先找出这段偏移。" />
+              <CardHeader icon={<Crosshair className="size-4" />} title="歌词开头对齐" help={<HelpButton k="settings.calibration" />} description="视频的声音经常和 LRC 歌词里的时间差一段（片头、不同版本）。每个 LRC 任务需要先找出这段偏移。" />
               <CardBody className="space-y-3">
                 <Group label="偏移怎么确定">
                   <Segmented<Simple['calibration']> label="偏移怎么确定" value={s.calibration} onChange={(v) => save({ calibration: v })}
@@ -160,7 +161,7 @@ export function SimpleSettings() {
           )}
           {tab === 'output' && (
             <Card>
-              <CardHeader icon={<Film className="size-4" />} title="输出视频" description="任务完成后自动把字幕烧录进视频（没有视频时生成纯黑背景的视频）。" />
+              <CardHeader icon={<Film className="size-4" />} title="输出视频" help={<HelpButton k="settings.output" />} description="任务完成后自动把字幕烧录进视频（没有视频时生成纯黑背景的视频）。" />
               <CardBody className="space-y-4">
                 <Switch checked={s.auto_export} onChange={(v) => save({ auto_export: v })} label="完成后自动生成视频" />
                 {s.auto_export && (
@@ -201,7 +202,7 @@ function StorageCard() {
   const total = info ? info.projects_size + info.cache.size + info.leftovers.size : null;
   return (
     <Card>
-      <CardHeader icon={<HardDrive className="size-4" />} title="存储空间"
+      <CardHeader icon={<HardDrive className="size-4" />} title="存储空间" help={<HelpButton k="storage" />}
         description="每首歌的项目里有视频、分离出的人声和伴奏、生成的视频，一首通常几百 MB。不需要的可以删掉。" />
       <CardBody className="flex flex-wrap items-center gap-3">
         <span className="text-[13px] text-muted">
@@ -239,6 +240,7 @@ function UpdateCard({ enabled }: { enabled: boolean }) {
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" variant="secondary" loading={checking} onClick={() => void checkNow()}>立即检查</Button>
           <DiagnosticsButton size="sm" label="复制诊断信息（反馈问题时附上）" />
+          <Button size="sm" variant="ghost" onClick={() => { resetTips(); toast('ok', '使用提示会重新显示'); }}>重新显示使用提示</Button>
           {info?.newer && <span className="text-xs text-muted">{updateHowTo(info)}</span>}
         </div>
       </CardBody>
@@ -274,7 +276,7 @@ function DefaultStyleCard({ style }: { style: KaraokeStyle }) {
 
   return (
     <Card>
-      <CardHeader icon={<Subtitles className="size-4" />} title="字幕样式（第 4 步的“设置里的样式”）"
+      <CardHeader icon={<Subtitles className="size-4" />} title="字幕样式（第 4 步的“设置里的样式”）" help={<HelpButton k="settings.style" />}
         description="第 4 步选“设置里的样式”时完整使用这套样式；选“模版配色”时使用它的布局、字号、时间等，配色和荧光由模版决定。可以保存成预设，随时切换。" />
       <CardBody className="space-y-3 pt-3">
         <StylePanel style={draft} onChange={change} fonts={fonts.families} defaultFont={fonts.default}

@@ -11,6 +11,7 @@ import { StudioDock } from '@/components/shell/StudioDock';
 import { ErrorBoundary } from '@/components/shell/ErrorBoundary';
 import { Toaster } from '@/components/shell/Toaster';
 import { Topbar } from '@/components/shell/Topbar';
+import { setShortcutsOpen, ShortcutsDialog } from '@/components/guide/Shortcuts';
 import { TooltipProvider } from '@/components/ui';
 import { HomePage } from '@/pages/Home';
 import { ModePage } from '@/pages/Mode';
@@ -70,6 +71,11 @@ export default function App() {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === '?' || (e.code === 'Slash' && e.shiftKey)) {  // (some layouts report / with Shift)
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
       if (e.code === 'Space' || e.key === ' ') {
         e.preventDefault();
         player.toggle();
@@ -118,6 +124,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      <ShortcutsDialog />
       <Toaster />
     </TooltipProvider>
   );

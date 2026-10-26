@@ -8,6 +8,7 @@ import type { AudioAsset, ProjectView, Role } from '@/lib/types';
 import { ppath, run, setPV, toast, useProject, useView } from '@/store/app';
 import { Badge, Button, Card, CardBody, CardHeader, DropZone, Tip } from '@/components/ui';
 import { openEnhance } from '@/pages/enhance/tab';
+import { HelpButton } from '@/components/guide/Help';
 
 export const AUDIO_ACCEPT = 'audio/*,.wav,.flac,.mp3,.m4a,.aac,.ogg,.opus,.aiff,.aif';
 // a background behind the subtitles: a picture, or a video played in a loop
@@ -46,7 +47,8 @@ export function AudioCard() {
       <CardHeader
         title="音频"
         icon={<FileAudio className="size-4" />}
-        description="原曲用于对齐与试听；已有的人声 / 同源伴奏可作为分轨导入，导入时会检查与原曲的时间同步。音频不会被移动或剪切。"
+        help={<HelpButton k="input.audio" />}
+        description="原曲用于对齐和试听；已有的人声 / 伴奏分轨也可以在这里导入。"
       />
       <CardBody className="space-y-5">
         <AssetSlot

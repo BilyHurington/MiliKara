@@ -134,14 +134,16 @@ export function Card({ className, children, ...rest }: { className?: string; chi
   );
 }
 
-export function CardHeader({ title, description, icon, actions, className }: {
-  title: ReactNode; description?: ReactNode; icon?: ReactNode; actions?: ReactNode; className?: string;
+export function CardHeader({ title, description, icon, actions, help, className }: {
+  title: ReactNode; description?: ReactNode; icon?: ReactNode; actions?: ReactNode;
+  /** the "?" beside the title (components/guide) */
+  help?: ReactNode; className?: string;
 }) {
   return (
     <div className={cn('flex items-start gap-3 border-b border-line px-5 py-4', className)}>
       {icon && <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">{icon}</div>}
       <div className="min-w-0 flex-1">
-        <h3 className="text-[15px] font-semibold leading-6">{title}</h3>
+        <h3 className="flex items-center gap-1 text-[15px] font-semibold leading-6">{title}{help}</h3>
         {description && <p className="mt-0.5 text-[13px] leading-5 text-muted">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
@@ -155,14 +157,16 @@ export function CardBody({ className, children }: { className?: string; children
 
 // ------------------------------------------------------------------ Page header
 
-export function PageHeader({ eyebrow, title, description, actions }: {
+export function PageHeader({ eyebrow, title, description, actions, help }: {
   eyebrow?: ReactNode; title: ReactNode; description?: ReactNode; actions?: ReactNode;
+  /** the "?" beside the title (components/guide) */
+  help?: ReactNode;
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         {eyebrow && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-accent">{eyebrow}</div>}
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="flex items-center gap-1.5 text-2xl font-semibold tracking-tight">{title}{help}</h1>
         {description && <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

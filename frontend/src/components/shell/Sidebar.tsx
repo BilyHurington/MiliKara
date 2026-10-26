@@ -8,6 +8,7 @@ import { closeProject, loadProjects, openProject, run, setStep, STEPS, useApp, t
 import { stepStatus, type StepState } from '@/store/steps';
 import { Badge } from '@/components/ui';
 import { StorageDialog } from '@/components/StorageDialog';
+import { StepsHelp, StepsOverviewCard } from '@/components/guide/StepsOverview';
 import { UpdateBadge } from './UpdateBadge';
 
 export function Sidebar() {
@@ -38,7 +39,8 @@ export function Sidebar() {
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 lg:px-3">
         {pv ? (
           <>
-            <div className="hidden px-2 pb-2 text-[11px] font-semibold tracking-wider text-subtle uppercase lg:block">工作流程</div>
+            <StepsOverviewCard className="hidden lg:block" />
+            <div className="hidden items-center gap-1 px-2 pb-2 text-[11px] font-semibold tracking-wider text-subtle uppercase lg:flex">工作流程<StepsHelp /></div>
             <ol className="relative space-y-0.5">
               {STEPS.map((st, i) => {
                 const status = stepStatus(st.id, pv, running);

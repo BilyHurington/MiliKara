@@ -13,6 +13,7 @@ import { AiSettingsForm } from '@/components/AiSettingsForm';
 import {
   Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, DropZone, Progress, Segmented, Textarea,
 } from '@/components/ui';
+import { HelpButton } from '@/components/guide/Help';
 
 interface Report {
   ok: boolean;
@@ -135,7 +136,8 @@ export function AiRoundtripCard() {
       <CardHeader
         icon={<Bot className="size-4" />}
         title="AI 注音"
-        description="让 AI 检查每个片段的读音。可以一键交给本机的 Claude Code / Codex 或 API，也可以复制提示词到任意网页聊天再贴回结果。AI 的回复只作为注音补丁：校验并预览后才会应用，不能修改时间、偏移或锁定的读音。"
+        help={<HelpButton k="enhance.ai" />}
+        description="让 AI 检查每个词的读音：可以一键完成（需要在设置里配置），也可以复制提示词到任意 AI 网页，再把回复贴回来。应用前会先校验并预览；AI 不能改时间和锁定的读音。"
       />
       <CardBody className="space-y-6">
         <AutoAi scope={scope} setScope={setScope} total={sung.length} uncertainIds={uncertainIds} />

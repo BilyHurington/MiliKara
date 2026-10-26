@@ -25,6 +25,8 @@ import { AUDIO_ACCEPT, BACKGROUND_ACCEPT, MEDIA_ACCEPT } from '@/pages/input/Aud
 import { CalibrateDialog } from './CalibrateDialog';
 import { ReadingsDialog } from './ReadingsDialog';
 import { TaskStyleStep } from './TaskStyleStep';
+import { FirstTip, HelpButton } from '@/components/guide/Help';
+import { STAGE_WHAT, type HelpKey } from '@/lib/guide';
 
 const PROVIDER_LABEL = { manual: '手动（网页聊天）', claude: 'Claude Code', codex: 'Codex', openai: 'API' } as const;
 
@@ -210,10 +212,11 @@ export function SimpleHome() {
           同一个项目目录下还开着另一个 MiliKara 服务，任务由它执行；这里只能查看，不能添加、取消或重试任务。请关掉其中一个后刷新页面。
         </Callout>
       )}
+      <FirstTip k="simple.welcome" />
       <Card>
         <CardHeader icon={<Sparkles className="size-4" />} title="做一首卡拉OK" description="放入视频（或音频 + 背景图片 / 视频）和歌词，其余全部自动完成：注音、人声分离、对齐、生成带字幕的视频。" />
         <CardBody className="space-y-6">
-          <StepBlock n={1} title="模式">
+          <StepBlock n={1} title="模式" help="simple.mode">
             <Segmented<Mode> label="模式" value={mode} onChange={chooseMode} options={[
               { value: 'lrc', label: 'LRC 增强（推荐）', title: '使用歌词里的行时间，长前奏和重复副歌更稳' },
               { value: 'plain', label: '普通', title: '只用歌词文字' },
@@ -225,7 +228,7 @@ export function SimpleHome() {
             </p>
           </StepBlock>
 
-          <StepBlock n={2} title="视频或音频">
+          <StepBlock n={2} title="视频或音频" help="simple.media">
             <Segmented<'video' | 'audio'> label="画面来源" value={source} onChange={(v) => { setSource(v); saveSource(v); }} options={[
               { value: 'video', label: '视频', title: '字幕烧录在视频自己的画面上' },
               { value: 'audio', label: '音频 + 背景', title: '只有音频：配一张图片或一段循环播放的视频作为画面' },
@@ -254,7 +257,7 @@ export function SimpleHome() {
             </div>
           </StepBlock>
 
-          <StepBlock n={3} title="歌词">
+          <StepBlock n={3} title="歌词" help="simple.lyrics">
             <Textarea value={lyrics} onChange={(e) => setLyrics(e.target.value)} className="h-32"
               aria-label="音乐链接或歌词"
               placeholder={'粘贴网易云音乐 / QQ 音乐的歌曲链接（或分享文字），\n或者直接粘贴 LRC / 纯文本歌词'} />
@@ -279,7 +282,7 @@ export function SimpleHome() {
           </StepBlock>
 
           {s && styleOpts && (
-            <StepBlock n={4} title="字幕与视频">
+            <StepBlock n={4} title="字幕与视频" help="simple.output">
               <TaskStyleStep value={styleOpts} onChange={changeStyle} settings={s} />
             </StepBlock>
           )}
@@ -308,7 +311,7 @@ export function SimpleHome() {
       </Card>
 
       <Card>
-        <CardHeader icon={<ListMusic className="size-4" />} title="任务" description="按顺序逐个处理；完成的任务点开可以进入详细模式继续调整。" />
+        <CardHeader icon={<ListMusic className="size-4" />} title="任务" help={<HelpButton k="simple.tasks" />} description="按顺序逐个处理；完成的任务点开可以进入详细模式继续调整。" />
         <CardBody className="p-0">
           {tasks.length === 0 ? (
             <EmptyState className="m-4 py-10" title="还没有任务" description="上面放入视频和歌词，点“开始制作”" />
@@ -334,12 +337,12 @@ export function SimpleHome() {
   );
 }
 
-function StepBlock({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+function StepBlock({ n, title, help, children }: { n: number; title: string; help: HelpKey; children: React.ReactNode }) {
   return (
     <section className="flex gap-4">
       <span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent">{n}</span>
       <div className="min-w-0 flex-1">
-        <h3 className="mb-2 text-sm font-semibold">{title}</h3>
+        <h3 className="mb-2 flex items-center gap-1 text-sm font-semibold">{title}<HelpButton k={help} /></h3>
         {children}
       </div>
     </section>
@@ -501,7 +504,8 @@ function StageChip({ s }: { s: PipelineStage }) {
     waiting: <Hand className="size-3" />,
     pending: null,
   }[s.status];
-  const tip = s.status === 'running' ? `${Math.round(s.progress * 100)}% ${s.message}` : s.message || (s.status === 'skipped' ? '已跳过' : '');
+  const state = s.status === 'running' ? `${Math.round(s.progress * 100)}% ${s.message}` : s.message || (s.status === 'skipped' ? '已跳过' : '');
+  const tip = [STAGE_WHAT[s.key], state].filter(Boolean).join('：');
   return (
     <li title={tip}
       className={cn('flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium',

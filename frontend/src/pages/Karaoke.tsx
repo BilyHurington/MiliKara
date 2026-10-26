@@ -23,6 +23,8 @@ import { setSimpleDefault } from '@/store/simple';
 import { countdownPlan } from '@/lib/countdown';
 import { useFitHeight } from '@/lib/useFitHeight';
 import { singersSettled } from '@/store/singers';
+import { INTRO } from '@/lib/guide';
+import { FirstTip, HelpButton } from '@/components/guide/Help';
 
 interface LineSpan { id: string; index: number; text: string; start: number; end: number; countdown: boolean | null }
 
@@ -178,6 +180,7 @@ export function KaraokePage() {
       )}
       {result.stale && <Callout tone="warn" className="mb-4" title="当前对齐结果已过期">{result.stale_reason}。字幕仍按该结果生成。</Callout>}
       <SingersNote style={style} />
+      <FirstTip k="karaoke.first" className="mb-4" />
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,340px)] xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-6">
           <PreviewCard style={style} lines={lines} refreshKey={`${songInfo?.text ?? ''}|${lines.map((l) => l.countdown ?? '').join()}`} />
@@ -188,7 +191,7 @@ export function KaraokePage() {
         {/* next to the preview from 1024 px on (not below the burn card), sticky while scrolling */}
         <div ref={styleCol} className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:flex lg:max-h-[var(--fit-h)] lg:flex-col">
           <Card className="lg:flex lg:min-h-0 lg:flex-col">
-            <CardHeader title="字幕样式" actions={
+            <CardHeader title="字幕样式" help={<HelpButton k="karaoke.style" />} actions={
               <Tip content="极简模式之后的任务完整使用这套样式（配色、布局、注音、翻译、时间与特效）：第 4 步会切到“设置里的样式”，注音、翻译、歌曲信息跟随这套样式">
                 <Button size="xs" variant="ghost" icon={<Sparkles className="size-3.5" />}
                   onClick={() => run(async () => { await setSimpleDefault(style); toast('ok', '已设为极简模式默认样式', '第 4 步已改为使用“设置里的样式”'); }, '保存失败')}>
@@ -232,7 +235,7 @@ function Header() {
     <PageHeader
       eyebrow="第 8 步（可选）"
       title="卡拉OK字幕"
-      description="选择样式并预览任意时刻的画面；导出 ASS 字幕，或一键生成带字幕的视频（把字幕烧录进画面：背景图片 / 循环播放的背景视频、原视频或纯黑）。设置会自动保存；总是使用项目的当前对齐结果。"
+      description={INTRO.karaoke}
       actions={<Button onClick={() => setStep('export')} icon={<ArrowRight className="size-4" />}>下一步：导出</Button>}
     />
   );
@@ -298,7 +301,7 @@ function PreviewCard({ style, lines, refreshKey }: { style: KaraokeStyle; lines:
 
   return (
     <Card>
-      <CardHeader icon={<Subtitles className="size-4" />} title="预览"
+      <CardHeader icon={<Subtitles className="size-4" />} title="预览" help={<HelpButton k="karaoke.preview" />}
         description={`${w}×${h} · ${pictureLabel(pic)} · 与烧录使用同一渲染器（libass）`}
         actions={pic.source !== 'black' ? (
           <Segmented size="sm" label="预览背景" value={bg} onChange={setBg}
@@ -481,7 +484,7 @@ function BurnCard({ style, patch, beforeBurn }: {
 
   return (
     <Card>
-      <CardHeader icon={<Film className="size-4" />} title="导出字幕 / 生成视频"
+      <CardHeader icon={<Film className="size-4" />} title="导出字幕 / 生成视频" help={<HelpButton k="karaoke.output" />}
         description="ASS 可用于任何支持 ASS 的播放器或剪辑软件；生成视频会把字幕烧录进画面（H.264 MP4），和极简模式的“生成视频”相同。" />
       <CardBody className="space-y-5">
         <div className="flex flex-wrap items-center gap-3">

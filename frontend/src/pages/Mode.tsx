@@ -9,6 +9,8 @@ import { isEnter, isEscape } from '@/lib/keys';
 import type { Mode, ProjectView } from '@/lib/types';
 import { loadProjects, ppath, run, setPV, setStep, toast, useProject, useView } from '@/store/app';
 import { arrowNav, Button, Callout, Card, CardBody, CardHeader, Input, PageHeader } from '@/components/ui';
+import { INTRO } from '@/lib/guide';
+import { HelpButton } from '@/components/guide/Help';
 
 const MODES: { value: Mode; title: string; icon: typeof Type; points: string[] }[] = [
   {
@@ -92,12 +94,12 @@ export function ModePage() {
       <PageHeader
         eyebrow="第 1 步"
         title="选择对齐模式"
-        description="决定是否使用 LRC 的行时间作为锚点。切换模式会保留所有输入与人工修改，旧结果若不再适用会被明确标记。"
+        description={INTRO.mode}
         actions={<Button variant="primary" onClick={() => setStep('input')} icon={<ArrowRight className="size-4" />}>下一步：音频与歌词</Button>}
       />
       <div className="space-y-6">
         <Card>
-          <CardHeader title="模式" />
+          <CardHeader title="模式" help={<HelpButton k="mode.choice" />} />
           <CardBody className="space-y-4">
             <ModeChoice value={project.mode} onChange={setMode} />
             {view.mode_notice && <Callout tone="warn">{view.mode_notice}</Callout>}

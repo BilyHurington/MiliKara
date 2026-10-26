@@ -21,6 +21,8 @@ import { lineStats, unitInfoMap } from './review/helpers';
 import { IssuesPanel } from './review/IssuesPanel';
 import { LineDetail, playUnit } from './review/LineDetail';
 import { LineList, type LineFilter } from './review/LineList';
+import { INTRO } from '@/lib/guide';
+import { FirstTip, HelpButton } from '@/components/guide/Help';
 
 export function ReviewPage() {
   const listWidth = useApp((s) => s.reviewListWidth);
@@ -151,7 +153,8 @@ export function ReviewPage() {
       <PageHeader
         eyebrow="第 6 步"
         title="人工检查"
-        description="点击单元定位并循环试听；在表格中输入或在波形上拖动所选单元两端修改起止。人工修改会锁定，重跑不会覆盖。"
+        help={<HelpButton k="review.page" />}
+        description={INTRO.review}
         actions={
           <>
             <Select
@@ -167,12 +170,14 @@ export function ReviewPage() {
                 </option>
               ))}
             </Select>
-            <Button variant="primary" onClick={() => setStep('export')} icon={<ArrowRight className="size-4" />}>导出</Button>
+            <Button onClick={() => setStep('export')}>导出</Button>
+            <Button variant="primary" onClick={() => setStep('karaoke')} icon={<ArrowRight className="size-4" />}>下一步：卡拉OK字幕</Button>
           </>
         }
       />
 
       <div className="space-y-6">
+        <FirstTip k="review.first" />
         {result.stale && (
           <Callout tone="warn" title="该结果已过期" actions={<Button size="sm" onClick={() => setStep('align')}>重新对齐</Button>}>
             {result.stale_reason ?? '输入已修改'}。仍可查看与试听，但不能修改时间；重新对齐时人工锁定的单元会被保留。
@@ -181,8 +186,8 @@ export function ReviewPage() {
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           <Stat label="发音单元" value={result.units.length} hint={`${stats.length} 行`} />
-          <Stat label="无时间" value={failed} tone={failed ? 'danger' : 'ok'} hint="失败 / 未对齐，不填伪时间" />
-          <Stat label="提示" value={nIssues} tone={nIssues ? 'warn' : 'ok'} hint="诊断，不是概率" />
+          <Stat label="无时间" value={failed} tone={failed ? 'danger' : 'ok'} hint="没对上的单元，需要处理" />
+          <Stat label="提示" value={nIssues} tone={nIssues ? 'warn' : 'ok'} hint="可能需要看一眼的地方" />
           <Stat label="人工修改" value={manual} tone={manual ? 'accent' : undefined} hint="已锁定，重跑保留" />
           <Stat label="覆盖" value={result.coverage.full ? '完整' : '局部'} hint={`${Math.round((1 - failed / Math.max(1, result.units.length)) * 100)}% 单元有时间`} />
         </div>

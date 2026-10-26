@@ -18,6 +18,8 @@ import { ppath, resumeJobs, run, setPV, setStep, toast, trackJob, useApp, useJob
 import {
   Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, EmptyState, Kbd, KV, NumberInput, PageHeader, Tip,
 } from '@/components/ui';
+import { INTRO } from '@/lib/guide';
+import { HelpButton } from '@/components/guide/Help';
 
 export function CalibratePage() {
   const project = useProject()!;
@@ -32,7 +34,7 @@ function PlainModeNotice() {
   });
   return (
     <>
-      <PageHeader eyebrow="第 4 步" title="首音校准" description="仅在 LRC 增强模式下使用：用 LRC 的行时间作为锚点前，先校准全局偏移。" />
+      <PageHeader eyebrow="第 4 步" title="首音校准" description="普通模式不需要这一步，直接去对齐即可；只有 LRC 增强模式要先确认歌词时间和音频的整体偏移。" />
       <EmptyState
         icon={<Timer className="size-5" />}
         title="普通模式不需要校准"
@@ -165,7 +167,7 @@ function Calibration() {
       <PageHeader
         eyebrow="第 4 步 · LRC 增强"
         title="首音校准"
-        description="选择一句歌词，在它第一处实际发音的位置标记，程序据此计算全局偏移（极简模式里的“确认开头位置”就是这一步）。音频不会被移动或剪掉前奏，只计算歌词锚点。"
+        description={INTRO.calibrate}
         actions={<Button variant="primary" onClick={() => setStep('align')} icon={<ArrowRight className="size-4" />}>下一步：对齐</Button>}
       />
 
@@ -319,7 +321,7 @@ function FormulaCard({ line }: { line: Line | null }) {
 
   return (
     <Card>
-      <CardHeader title="时间计算" description="base = 原始句首 + 内嵌平移；effective = base + 人工全局平移" />
+      <CardHeader title="时间计算" help={<HelpButton k="calibrate.calc" />} description="每一行的时间 = 歌词里写的时间 + 全局偏移" />
       <CardBody className="space-y-3">
         <KV rows={[
           ['原始句首（LRC 中写的时间）', fmtMs(raw)],
@@ -402,7 +404,7 @@ function LinePicker({ sung, lineNo, selected, onSelect }: {
   const checked = new Set(cal.checks.map((c) => c.line_id));
   return (
     <Card className="self-start lg:sticky lg:top-4">
-      <CardHeader title="歌词行" description={`${sung.length} 行参与对齐`} />
+      <CardHeader title="歌词行" help={<HelpButton k="calibrate.lines" />} description={`${sung.length} 行参与对齐`} />
       <ul className="max-h-[60vh] overflow-y-auto p-2">
         {sung.map((l) => {
           const st = view.effective_starts[l.id];
