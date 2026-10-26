@@ -508,6 +508,23 @@ describe('colour template requests (F-M12)', () => {
     expect(latest.text.outline_color_sung).toBe('');  // the outline's own colour again: no second colour
   });
 
+  it('symbols at the start / end of every line', async () => {
+    mockApi({ 'GET /api/karaoke/styles': () => [builtinSaved()] });
+    const base = plainStyle();
+    let latest: KaraokeStyle = base;
+    function Host() {
+      const [s, setS] = useState(base);
+      latest = s;
+      return <StylePanel style={s} onChange={setS} fonts={[]} defaultFont="" defaultSection="text" />;
+    }
+    renderUI(<Host />);
+    expect(screen.queryByLabelText('颜色（同歌词未唱）')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '每句结尾的符号' }), { target: { value: '★' } });
+    expect(latest.decor).toEqual({ start: '', end: '★', color: '', size_pct: 80 });
+    fireEvent.change(screen.getByLabelText('颜色（同歌词未唱）'), { target: { value: '#ff0000' } });
+    expect(latest.decor!.color).toBe('#FF0000');
+  });
+
   it('mergeThemeColors takes only what a template decides', () => {
     const cur = plainStyle();
     cur.layout.margin_v = 333;

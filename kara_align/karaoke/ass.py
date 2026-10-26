@@ -147,6 +147,10 @@ class LaidLine:
     # shown until the last one is sung
     trans_until: Optional[int] = None
     countdown_ms: int = 0  # countdown dots before it (plan_countdowns): the time they need; 0 = none
+    # written beside it (karaoke.linetags): who sings it, the style's symbols; a wrapped line's first
+    # piece has the start, its last piece the end
+    pre: Optional[Any] = None
+    post: Optional[Any] = None
 
     @property
     def text(self) -> str:
@@ -931,7 +935,7 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
               time_offset_ms: float = 0.0, size: Optional[tuple[int, int]] = None) -> tuple[str, list[str]]:
     """Return (ASS text, warnings).  ``size``: the frame the subtitles are drawn on (PlayRes)."""
     from .effects import FX_STYLE, Syllable, ball_room, syllable_events
-    from .info import info_events, info_style
+    from .info import info_events, info_style, legend_events
 
     style = style or project.karaoke
     audio_offset_ms = time_offset_ms  # the title card keeps real time
@@ -1004,6 +1008,21 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
         over_l, over_r = ruby_overhang(chunks, widths, m_ruby)
         return (sum(widths) or 1.0) + over_l + over_r
 
+    from .linetags import Tagger
+
+    # who sings beside a line: in each singer's own colour (as in the legend), with the glow of its lyrics
+    tagger = Tagger(style, {i: (sg.members[i - 1].color, scol[i]["glow_unsung"]) for i in scol}, family, txt.bold, main_size,
+                    m_main.ink)
+
+    def sung_by(chunks: list[Chunk], ln: Line) -> tuple[int, ...]:
+        """Who sings a line, in the order they first sing (its parts from left to right)."""
+        out: list[int] = []
+        for c in chunks:
+            for i in c.singers:
+                if i in scol and i not in out:
+                    out.append(i)
+        return tuple(out) or tuple(i for i in ln.singers if i in scol)
+
     covered = set(result.coverage.line_ids) if not result.coverage.full else None
     laid: list[LaidLine] = []
     skipped = 0
@@ -1017,10 +1036,15 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
             skipped += 1
             continue
         unit_times = [times[u.id] for u in ln.units() if u.id in times and None not in times[u.id]]
-        # a line too wide for the room between the margins is wrapped into pieces
-        laid += wrap_line(LaidLine(ln, chunks, min(starts), max(ends),
-                                   translation=(ln.translation or None) if tr.enabled else None,
-                                   units=unit_times), extent, avail, lay.wrap)  # type: ignore[arg-type]
+        pre, post = tagger.tags(ln, sung_by(chunks, ln))
+        beside = (pre.width if pre else 0.0) + (post.width if post else 0.0)
+        # a line too wide for the room between the margins (less what is written beside it) is wrapped
+        pieces = wrap_line(LaidLine(ln, chunks, min(starts), max(ends),
+                                    translation=(ln.translation or None) if tr.enabled else None,
+                                    units=unit_times), extent, max(avail - beside, avail * 0.5),
+                           lay.wrap)  # type: ignore[arg-type]
+        pieces[0].pre, pieces[-1].post = pre, post
+        laid += pieces
     if skipped:
         warnings.append(f"{skipped} 行没有任何时间，未写入字幕")
     if tr.enabled and not any(ll.translation for ll in laid):
@@ -1212,6 +1236,30 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
             i = j + 1
         return out
 
+    def emit_tags(tags: Any, left: float, main_y: float, scale: float, t_from: float, t_to: float, fad: str,
+                  before: bool) -> None:
+        """The blocks at one end of a line (karaoke.linetags), from ``left``: each in its own colours and
+        glow, as long as the line shows.  Before the lyric they hug it (rows right-aligned), after it
+        likewise."""
+        x = left
+        for b in tags.blocks:
+            if not before:
+                x += tags.gap * scale  # the gap is on the lyric's side
+            ratio = max(0.6, b.size / main_size)  # a thin outline would not hold small text
+            look = f"\\fs{b.size * scale:.1f}\\bord{txt.outline * k * ratio:.2f}\\shad{txt.shadow * k * ratio:.2f}"
+            for row, y in zip(b.rows, tagger.row_baselines(b, main_y, scale)):
+                body = "".join(f"{{\\1c{bgr_tag(c)}}}{escape_text(t)}" for t, c, _ in row)
+                pos = (f"\\an3\\pos({x + b.width * scale:.1f},{y:.1f})" if before
+                       else f"\\an1\\pos({x:.1f},{y:.1f})")
+                if glow.enabled:
+                    halo = "".join(f"{{\\3c{bgr_tag(g)}}}{escape_text(t)}" for t, _, g in row)
+                    emit(L_GLOW, t_from, t_to, "KGlow", pos + glow_tags(row[0][2], glow.size * k * ratio, family,
+                                                                          b.size * scale, txt.bold), halo, fad)
+                emit(L_MAIN, t_from, t_to, "KMain", pos + look, body, fad)
+            x += b.width * scale
+            if before:
+                x += tags.gap * scale
+
     def emit_countdown(ll: LaidLine, t_from: float, x0: float, line_top: float, scale: float) -> float:
         """Countdown dots above the start of the line, going one by one until its first syllable (their
         times shifted like the lyrics, so the last goes as the sweep starts); returns their top edge."""
@@ -1273,8 +1321,11 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
     geom = []
     for ll in laid:
         widths = chunk_widths(ll.chunks, m_main, m_ruby, ruby_size, rb.fit)
-        line_w = sum(widths) or 1.0
+        pre_w, post_w = (ll.pre.width if ll.pre else 0.0), (ll.post.width if ll.post else 0.0)
+        line_w = (sum(widths) or 1.0) + pre_w + post_w  # what is written beside it is part of the line
         over_l, over_r = ruby_overhang(ll.chunks, widths, m_ruby)
+        # (a reading over the first / last word may reach over the blocks beside it: they are lower)
+        over_l, over_r = max(0.0, over_l - pre_w), max(0.0, over_r - post_w)
         extent = line_w + over_l + over_r  # readings reaching past the line's ends count too
         scale = min(1.0, room / extent) if lay.shrink_long_lines else 1.0
         if scale < 1.0:
@@ -1283,9 +1334,9 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
         if lay.arrangement == "alternate" and n > 1 and 0 <= ll.slot < n:
             align = "left" if ll.slot == 0 else ("right" if ll.slot == n - 1 else "center")
         wide = extent * scale > avail + 0.5
-        geom.append((widths, line_w * scale, over_l * scale, over_r * scale, scale, align, wide))
+        geom.append((widths, line_w * scale, over_l * scale, over_r * scale, scale, align, wide, pre_w * scale))
     insets = alternate_insets(laid, geom, lay.alternate_indent * k, avail)
-    for ll, (widths, line_w, over_l, over_r, scale, align, wide), inset in zip(laid, geom, insets):
+    for ll, (widths, line_w, over_l, over_r, scale, align, wide, pre_x), inset in zip(laid, geom, insets):
         ext = line_w + over_l + over_r
         if align == "left":
             # a wide line keeps its start while it can, else moves toward the left edge
@@ -1309,7 +1360,8 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
         if len(spans) > 1:
             pause = (spans[1][0] - spans[0][1] + tm.hold_ms + tm.lead_in_ms) / 1000
             warnings.append(f"「{ll.line.text}」中间停顿约 {pause:.0f} 秒，停顿期间暂时隐藏该行")
-        cxs, x = [], x0
+        body_x0 = x0 + pre_x  # the lyric itself, after what is written before it
+        cxs, x = [], body_x0
         for w in widths:
             cxs.append(x + w * scale / 2)
             x += w * scale
@@ -1323,7 +1375,7 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
             bottom = main_y + ((trans_gap + trans_size) if (ll.translation and per_line_trans) else 0)
             top = line_top
             if ll.countdown_ms and n_span == 0:
-                top = emit_countdown(ll, t_from, x0, line_top, scale)
+                top = emit_countdown(ll, t_from, body_x0, line_top, scale)
             boxes.append((t_from + time_offset_ms, t_to + time_offset_ms, x0 - over_l, top,
                           x0 + line_w + over_r, bottom))
             runs = runs_of(ll, cxs, scale)
@@ -1368,6 +1420,10 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
                                                   int(t_from) + sweep_time(segs, xb, instant))) if following else None
                         syllables += _syllables(c.ruby, cx, ruby_y, ruby_size, scale, m_ruby, ruby_family, True,
                                                 t_from, t_to, group, line_top, room_above, timing, color=color)
+            if ll.pre:
+                emit_tags(ll.pre, x0, main_y, scale, t_from, t_to, fad, True)
+            if ll.post:
+                emit_tags(ll.post, body_x0 + sum(widths) * scale, main_y, scale, t_from, t_to, fad, False)
             if ll.translation and per_line_trans:
                 ty = main_y + trans_gap + trans_size
                 # a translation wider than the room between the margins is shrunk, and kept inside them
@@ -1399,6 +1455,8 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
     song_end = (orig.duration_ms + audio_offset_ms) if orig is not None and orig.duration_ms else None
     events += info_events(project, style, W, H, k, family, audio_offset_ms, boxes=boxes, warnings=warnings,
                           end_ms=song_end)
+    # who each colour is: right after the title card
+    events += legend_events(project, style, W, H, k, family, audio_offset_ms, boxes=boxes, warnings=warnings)
 
     shadow_back = ass_color(txt.shadow_color, 100 - txt.shadow_opacity)
 

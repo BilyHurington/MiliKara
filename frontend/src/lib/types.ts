@@ -55,6 +55,8 @@ export interface SingerSpan { start: number; end: number; singers: number[] }
 /** One singer of a karaoke style: "" colours are derived from `color` */
 export interface KaraokeSinger {
   name: string;
+  /** a short name beside the lines / in the legend ('' = the name) */
+  label?: string;
   /** the key that assigns this singer on the 演唱者 page ('' = none; one of SINGER_KEYS) */
   key: string;
   color: string; color_unsung: string; color_sung: string; outline_color: string; glow_unsung: string; glow_sung: string;
@@ -64,7 +66,11 @@ export type SingerMix = 'split' | 'gradient';
 export type SingerDirection = 'vertical' | 'horizontal';
 /** Singers who sing together: a key (e.g. 3 = 1+2; no singer and no other combination has it) and
  *  their own look (null: the singers' setting) */
-export interface SingerCombo { key: string; singers: number[]; mix?: SingerMix | null; direction?: SingerDirection | null }
+export interface SingerCombo {
+  key: string; singers: number[]; mix?: SingerMix | null; direction?: SingerDirection | null;
+  /** its own name beside its lines and in the legend (e.g. 全员); '' = the singers' names */
+  label?: string;
+}
 export interface KaraokeSingers {
   /** the look of parts sung together, unless a combination of the same singers has its own;
    *  vertical: top to bottom; horizontal: left to right across each run sung together */
@@ -73,6 +79,10 @@ export interface KaraokeSingers {
    *  'auto' (the first singer's when split top to bottom) */
   ruby?: 'auto' | 'split' | 'first';
   combos?: SingerCombo[];
+  /** after the title card: who each colour is (分色列表), for legend_ms */
+  legend?: boolean; legend_ms?: number;
+  /** who sings each line, written at its start or end */
+  labels?: 'off' | 'start' | 'end';
 }
 /** A saved set of singers (演唱者预设): names, colours, keys, combinations, how parts sung together look */
 export interface SingerPreset { id: string; name: string; updated: string | null; singers: KaraokeSingers }
@@ -280,6 +290,8 @@ export interface KaraokeStyle {
   singers?: KaraokeSingers;
   /** countdown dots before the first line / after a long pause (time based; a line can say otherwise) */
   countdown?: KaraokeCountdown;
+  /** text or symbols at the start / end of every line; '' colour = the lyrics' unsung colour */
+  decor?: { start: string; end: string; color: string; size_pct: number };
 }
 
 export interface KaraokeCountdown { intro: boolean; interlude: boolean; min_gap_ms: number; dots: number }

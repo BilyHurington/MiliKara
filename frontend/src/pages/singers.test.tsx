@@ -190,6 +190,25 @@ describe('singers page', () => {
     await waitFor(() => expect(useApp.getState().toasts.map((t) => t.title)).toContain('每两位演唱者都已经有组合了'));
   });
 
+  it('short names, a name for a combination, the legend and who sings each line', async () => {
+    seedStore('singers');
+    const { api, pv } = server();
+    pv.project.karaoke!.singers!.combos = [{ key: '3', singers: [1, 2] }];
+    renderUI(<SingersPage />);
+    await screen.findByDisplayValue('Ann');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ann的简称' }), { target: { value: 'A' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '组合 1+2 的名字' }), { target: { value: '一起' } });
+    fireEvent.click(screen.getByRole('radio', { name: '句首' }));
+    fireEvent.click(screen.getByRole('switch', { name: '开头显示分色列表' }));
+    await act(() => flushSingers());
+    const sent = api.find('PUT', '/karaoke/singers').at(-1)!.body;
+    expect(sent.members[0].label).toBe('A');
+    expect(sent.combos[0].label).toBe('一起');
+    expect(sent.labels).toBe('start');
+    expect(sent.legend).toBe(false);
+    expect(screen.getByText(/两人一起唱分上下两小行/)).toBeInTheDocument();
+  });
+
   it('a saved set of singers is saved and loaded', async () => {
     seedStore('singers');
     const { pv } = server();

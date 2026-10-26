@@ -919,6 +919,8 @@ class KaraokeSinger(_KaraokeBase):
     a colour template derives a style (themes.singer_colors)."""
 
     name: str = Field(default="", max_length=40)
+    # shown beside the lines this singer sings (KaraokeSingers.labels) and in the legend; "" = the name
+    label: str = Field(default="", max_length=12)
     # the key that assigns this singer on the 演唱者 page ("" = none)
     key: str = Field(default="", max_length=1)
     color: str = _color("#ED35B3")
@@ -942,6 +944,8 @@ class KaraokeSingerCombo(_KaraokeBase):
     singers: list[int] = Field(default_factory=list)
     mix: Optional[SingerMix] = None
     direction: Optional[SingerDirection] = None
+    # beside a line these singers sing together (e.g. 全员); "" = each singer's own label, in two rows
+    label: str = Field(default="", max_length=12)
 
     @model_validator(mode="before")
     @classmethod
@@ -969,6 +973,12 @@ class KaraokeSingers(_KaraokeBase):
     ruby: Literal["auto", "split", "first"] = "auto"
     # singers who sing together: a key, and their own look
     combos: list[KaraokeSingerCombo] = Field(default_factory=list)
+    # after the song title card: which colour is whom (a card in the same corner), for legend_ms
+    legend: bool = True
+    legend_ms: int = Field(default=5000, ge=1000, le=30000)
+    # who sings each line, written beside it in their colours: "start" / "end" of the line, or "off";
+    # several singers in two small rows as tall as the lyric (a combination's own label in one)
+    labels: Literal["off", "start", "end"] = "off"
 
     @model_validator(mode="before")
     @classmethod
@@ -1053,6 +1063,16 @@ class KaraokeTheme(_KaraokeBase):
     secondary: str = _color("", follow=True)
 
 
+class KaraokeDecor(_KaraokeBase):
+    """Text or symbols at the start / end of every lyric line (★ ♪ ♡ …), in one colour.  Drawn by the
+    subtitle renderer: characters of a font (colour emoji and pictures are not supported there)."""
+
+    start: str = Field(default="", max_length=12)
+    end: str = Field(default="", max_length=12)
+    color: str = _color("", follow=True)  # "" = the lyrics' unsung colour
+    size_pct: int = Field(default=80, ge=30, le=150)  # of the lyric size
+
+
 class KaraokeStyle(_KaraokeBase):
     version: int = 2
     preset: str = Field(default="", max_length=400)  # name of the saved style it was loaded from ("" = none)
@@ -1068,6 +1088,7 @@ class KaraokeStyle(_KaraokeBase):
     output: KaraokeOutput = Field(default_factory=KaraokeOutput)
     singers: KaraokeSingers = Field(default_factory=KaraokeSingers)
     countdown: KaraokeCountdown = Field(default_factory=KaraokeCountdown)
+    decor: KaraokeDecor = Field(default_factory=KaraokeDecor)
 
     @model_validator(mode="before")
     @classmethod

@@ -296,7 +296,7 @@ drawings with the style `KDots`. Simple-mode tasks: `task_style.countdown_intro`
 
 **Singers** (多人演唱): `KaraokeStyle.singers = {members: [{name, key, color, color_unsung, color_sung, outline_color, glow_unsung,
 glow_sung}] (any number; "" colours are derived from `color`), mix: "split"|"gradient", direction: "vertical"|"horizontal",
-ruby: "auto"|"split"|"first", combos: [{key, singers, mix?, direction?}]}` (vertical: every character top to bottom; horizontal:
+ruby: "auto"|"split"|"first", combos: [{key, singers, mix?, direction?, label?}], legend, legend_ms, labels}` (vertical: every character top to bottom; horizontal:
 each run sung together left to right; `ruby`: the reading over a part sung together split like its lyric, in the first singer's
 colours, or "auto" = the first singer's when split top to bottom, else split; `combos`: singers who sing together, with their own
 `mix` / `direction` (null: the singers' setting) — a part sung by exactly a combination's singers, in its order or else in any
@@ -305,6 +305,17 @@ order, takes the combination's look; the same singers in the same order twice is
 the first free one in that order. A key that is not usable or used twice, or a combination of fewer than two singers, is
 refused when saved; when loaded the key is cleared (the combination dropped). Saved before keys existed: singer n has key n
 (1–9), a combination's number key becomes that character.
+Labels and legend: `members[].label` / `combos[].label` (≤ 12 characters, "" = the name / the singers' names);
+`singers.legend` (default true) / `legend_ms` (5000, 1000–30000): after the title card (at its start time when there is none),
+in the same corner, a card of every singer heard in the song and each combination heard that has a label, each beside a
+square of its colours (a blended combination in stripes) — only when at least two singers sing; `singers.labels`
+"off"|"start"|"end": who sings each line written before / after it, in each singer's colour with its glow (one singer: one
+row; two: one row each, the upper row's characters starting where the lyric's start and the lower's ending where they end;
+more: the first half above, joined by "/"; a combination with a label: that, in the lyrics' colour). `KaraokeStyle.decor =
+{start, end, color, size_pct}`: text / font symbols (≤ 12 characters; colour emoji and pictures are not drawn) at the start /
+end of every line, `color` "" = the lyrics' unsung colour, `size_pct` 80 (30–150) of the lyric size. Labels are outermost,
+symbols next to the lyric; both count in the line's width (centring, wrapping, shrinking); a wrapped line has the start ones
+on its first half and the end ones on its second.
 A translation keeps its own colours (`KTrans`); with `translation.singer_glow` (default true) its glow takes the line's singers' glow colours, several blended from left to right in the order they sing (never top to bottom); false: the translation's own glow.
 Who sings is kept in the lyrics: `Line.singers` (numbers, 1-based; several = together; empty = the style's own colours) and
 `Line.singer_spans: [{start, end, singers}]` (character ranges of `Line.text` sung by others than the line's singers;

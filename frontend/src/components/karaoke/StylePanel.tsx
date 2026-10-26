@@ -19,6 +19,8 @@ import { arrowNav, Badge, Button, Input, Segmented, Select, SliderField, Switch,
 import { ColorRow, TEMPLATE_LABEL } from './ThemeColors';
 import { COUNTDOWN_DEFAULTS } from '@/lib/countdown';
 
+const DECOR_DEFAULTS: NonNullable<KaraokeStyle['decor']> = { start: '', end: '', color: '', size_pct: 80 };
+
 export type SectionId = 'colors' | 'text' | 'ruby' | 'translation' | 'info' | 'layout' | 'timing' | 'effects';
 const SECTION_IDS: SectionId[] = ['colors', 'text', 'ruby', 'translation', 'info', 'layout', 'timing', 'effects'];
 type Patch = (fn: (s: KaraokeStyle) => void) => void;
@@ -192,6 +194,8 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
   };
   const { layout: L, text: T, ruby: R, translation: Tr, glow: G, timing: M, effects: E, info: I } = style;
   const C = style.countdown ?? COUNTDOWN_DEFAULTS;
+  const D = style.decor ?? DECOR_DEFAULTS;
+  const setDecor = (fn: (d: NonNullable<KaraokeStyle['decor']>) => void) => patch((s) => { s.decor = { ...D }; fn(s.decor); });
   const setCd = (fn: (c: NonNullable<KaraokeStyle['countdown']>) => void) => patch((s) => { s.countdown = { ...C }; fn(s.countdown); });
   const posLabel = { opposite: L.position === 'bottom' ? '画面顶部' : '画面底部', block: '歌词旁', line: '每行下方' };
   const sec = (id: SectionId) => ({ id });
@@ -258,6 +262,24 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
             <Segmented value={M.highlight} onChange={(v) => patch((s) => { s.timing.highlight = v; })}
               options={[{ value: 'sweep', label: '平滑扫光' }, { value: 'instant', label: '逐字变色' }]} />
           </Row>
+          <div className="space-y-3 rounded-xl border border-line p-3">
+            <div className="text-[13px] font-medium">每句开头 / 结尾的符号</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input className="h-8 w-24" value={D.start} maxLength={12} placeholder="开头，如 ♪" aria-label="每句开头的符号"
+                onChange={(e) => setDecor((d) => { d.start = e.target.value; })} />
+              <span className="text-xs text-subtle">歌词</span>
+              <Input className="h-8 w-24" value={D.end} maxLength={12} placeholder="结尾，如 ★" aria-label="每句结尾的符号"
+                onChange={(e) => setDecor((d) => { d.end = e.target.value; })} />
+            </div>
+            {(D.start.trim() || D.end.trim()) && (
+              <>
+                <Row label="大小"><Num name="符号大小" unit="%" value={D.size_pct} min={30} max={150} onChange={(v) => setDecor((d) => { d.size_pct = v; })} /></Row>
+                <ColorField label={D.color ? '颜色' : '颜色（同歌词未唱）'} value={D.color || T.color_unsung}
+                  onChange={(v) => setDecor((d) => { d.color = v === T.color_unsung ? '' : v; })} />
+              </>
+            )}
+            <p className="text-xs text-subtle">文字或字体里的符号（★ ♪ ♡ → 等）。彩色 emoji 和图片暂不支持。演唱者标注在“演唱者”页面设置。</p>
+          </div>
           <div className="space-y-4 rounded-xl border border-line p-3">
             <Switch checked={G.enabled} onChange={(v) => patch((s) => { s.glow.enabled = v; })} label={<span className="font-medium">荧光边缘</span>} />
             {G.enabled && (
