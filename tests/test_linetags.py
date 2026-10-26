@@ -148,7 +148,29 @@ def test_names_the_lyric_font_lacks_use_a_font_that_has_them(tmp_path, monkeypat
     _two_singers(h)
     h.project.karaoke.singers.labels = "end"
     h.save()
-    monkeypatch.setattr(fonts, "covering", lambda family, bold, text, prefer: "Other Sans")
+    monkeypatch.setattr(fonts, "covering", lambda family, bold, text, prefer, **kw: "Other Sans")
     text, _ = S.karaoke_ass(h)
     assert all("\\fnOther Sans" in e for e in _tags(text, "}Ann"))
     assert not any("\\fnOther Sans" in e for e in text.splitlines() if e.endswith("窓"))
+
+
+def test_rows_of_as_many_characters_are_as_long():
+    """A name with characters the lyric font lacks (濑 织 in a Japanese font): every label in one font
+    that has them all, also where the system fills them in (macOS) — else that row comes out shorter."""
+    from kara_align.karaoke import fonts
+
+    lyric = next((f for f in ("Hiragino Maru Gothic ProN", "Yu Gothic", "Meiryo")
+                  if fonts.covering_family("春", True, [f]) and fonts.lacking(f, True, "濑织")), None)
+    if lyric is None or fonts.covering_family("濑织春", True, [fonts.BUNDLED_JP, *fonts.HAN_FAMILIES]) is None:
+        import pytest
+        pytest.skip("no Japanese font without 濑 here")
+    st = KaraokeStyle()
+    st.singers = _sg(4)
+    for m, name in zip(st.singers.members, ("天海春香", "高槻弥生", "秋月律子", "水濑伊织")):
+        m.name = name
+    m = Measurer(lyric, True, 80.0)
+    tg = Tagger(st, {i: ("#ED35B3", "#ED35B3") for i in range(1, 5)}, lyric, True, 80.0, m.ink)
+    assert tg.family != lyric
+    block = tg.label((1, 2, 3, 4))
+    widths = [Measurer(tg.family, True, block.size).width("".join(r[0] for r in row)) for row in block.rows]
+    assert abs(widths[0] - widths[1]) < 0.5

@@ -9,8 +9,8 @@ lyric's end (the font's em box, ``Measurer.ink``).  Several singers: their label
 one row each for two singers, two rows shared out evenly for more; a combination of exactly these
 singers with a label of its own (e.g. 全员) in one row, in the lyrics' own colour (not one member's).
 Each run glows like its singer's lyrics.  Names or symbols the lyric font lacks: all of it in a font
-that has every character (where libass would fill them in from a font of its own choosing, at
-another width than measured).
+that has every character (a character filled in from another font would come out at another width
+and in another style, so two rows of as many characters would differ in length).
 """
 
 from __future__ import annotations
@@ -99,7 +99,7 @@ class Tagger:
         dec = style.decor
         text = "".join([*(label_of(sg, i) for i in range(1, len(sg.members) + 1)), *(c.label for c in sg.combos),
                         dec.start, dec.end, "/"])
-        self.family = covering(family, bold, text, [BUNDLED_JP, *HAN_FAMILIES])
+        self.family = covering(family, bold, text, [BUNDLED_JP, *HAN_FAMILIES], whole=True)
         # the em box of what is written beside the lines (its own font's when that is another)
         self.tag_ink = Measurer(self.family, bold, main_size).ink if self.family != family else ink
         em = main_size * max(0.05, ink[1] - ink[0])  # the lyric's em height

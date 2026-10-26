@@ -189,7 +189,8 @@ def legend_events(project: Project, style: KaraokeStyle, W: int, H: int, k: floa
     if not rows:
         return []
     info = style.info
-    family = covering(family, style.text.bold, "".join(r[0] for r in rows), [BUNDLED_JP, *HAN_FAMILIES])
+    # names: in one font that has all their characters (not filled in from another, in another style)
+    family = covering(family, style.text.bold, "".join(r[0] for r in rows), [BUNDLED_JP, *HAN_FAMILIES], whole=True)
     t0 = max(0.0, info.start_ms + time_offset_ms)
     if info.enabled and info_lines(project, style):
         t0 += info.duration_ms

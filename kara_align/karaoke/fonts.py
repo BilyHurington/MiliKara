@@ -281,10 +281,12 @@ def covering_family(text: str, bold: bool, prefer: list[str]) -> Optional[str]:
     return None
 
 
-def covering(family: str, bold: bool, text: str, prefer: Sequence[str]) -> str:
+def covering(family: str, bold: bool, text: str, prefer: Sequence[str], *, whole: bool = False) -> str:
     """``family``, or — where the characters it lacks would be drawn by a fallback of libass's own
-    choosing (not macOS) — the first of ``prefer`` that has every character of ``text``."""
-    if not text or system_han_fallback() or not lacking(family, bold, text):
+    choosing (not macOS) — the first of ``prefer`` that has every character of ``text``.  ``whole``:
+    also on macOS, for text that must look even (names: a character filled in from PingFang comes out
+    narrower and in another style than its neighbours)."""
+    if not text or (system_han_fallback() and not whole) or not lacking(family, bold, text):
         return family
     return covering_family(text, bold, list(prefer)) or family
 
