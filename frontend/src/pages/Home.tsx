@@ -10,6 +10,7 @@ import { adoptProject, deleteProject, loadProjects, openProject, run, toast, use
 import { Badge, Button, Card, CardBody, CardHeader, DropZone, EmptyState, Input, Tip } from '@/components/ui';
 import { StorageButton } from '@/components/StorageDialog';
 import { ModeChoice } from './Mode';
+import { HelpButton } from '@/components/guide/Help';
 
 export function HomePage() {
   const projects = useApp((s) => s.projects);
@@ -61,14 +62,14 @@ export function HomePage() {
           <div className="mt-6 flex flex-wrap gap-6 text-[13px] text-muted">
             <span className="flex items-center gap-2"><ListMusic className="size-4 text-accent" />逐单元时间</span>
             <span className="flex items-center gap-2"><Timer className="size-4 text-accent" />LRC 锚点约束</span>
-            <span className="flex items-center gap-2"><FileMusic className="size-4 text-accent" />人声保留混音</span>
+            <span className="flex items-center gap-2"><FileMusic className="size-4 text-accent" />降低人声的混音</span>
           </div>
         </div>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-3">
-          <CardHeader title="新建项目" description="第一步：选择是否使用 LRC 增强（之后仍可切换，输入与人工修改都会保留）" />
+          <CardHeader title="新建项目" help={<HelpButton k="home.new" />} description="歌词带时间（LRC）选 LRC 增强，只有文字选普通；之后仍可切换" />
           <CardBody className="space-y-5">
             <Input placeholder="歌曲名，例如：夜に駆ける" value={name} onChange={(e) => setName(e.target.value)}
               aria-label="歌曲名" onKeyDown={(e) => { if (isEnter(e)) void create(); }} className="h-10 text-[15px]" />
@@ -81,7 +82,7 @@ export function HomePage() {
 
         <div className="space-y-6 lg:col-span-2">
           <Card>
-            <CardHeader title="导入项目" description="project.json 或便携包 .kara.zip" icon={<FolderInput className="size-4" />} />
+            <CardHeader title="导入项目" help={<HelpButton k="home.import" />} description="项目包 .kara.zip 或 project.json" icon={<FolderInput className="size-4" />} />
             <CardBody>
               <DropZone accept=".json,.zip,application/json,application/zip" onFile={importFile}
                 title="拖入或点击选择项目文件" hint="音频缺失时可在项目中重新上传" compact />

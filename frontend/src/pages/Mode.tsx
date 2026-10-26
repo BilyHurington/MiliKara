@@ -9,19 +9,21 @@ import { isEnter, isEscape } from '@/lib/keys';
 import type { Mode, ProjectView } from '@/lib/types';
 import { loadProjects, ppath, run, setPV, setStep, toast, useProject, useView } from '@/store/app';
 import { arrowNav, Button, Callout, Card, CardBody, CardHeader, Input, PageHeader } from '@/components/ui';
+import { INTRO } from '@/lib/guide';
+import { HelpButton } from '@/components/guide/Help';
 
 const MODES: { value: Mode; title: string; icon: typeof Type; points: string[] }[] = [
   {
     value: 'plain',
     title: '普通模式',
     icon: Type,
-    points: ['音频 + 已知歌词（或注音 JSON）', '不使用任何外部时间锚点，整段有序对齐', '导入 LRC 时只取正文，并明确提示时间被忽略'],
+    points: ['音频 + 歌词文字', '只靠声音对齐整首歌', '导入 LRC 时只用文字，会提示时间没有使用'],
   },
   {
     value: 'lrc',
     title: 'LRC 增强模式',
     icon: Timer,
-    points: ['音频 + 带行时间的歌词', '先标记首个发音校准全局偏移', '句首锚点约束细对齐；无有效时间时要求补充或切换，不静默降级'],
+    points: ['音频 + 带行时间的歌词（LRC）', '先标出第一句开始唱的位置', '用每行的时间帮助定位，长前奏、间奏、重复副歌更稳'],
   },
 ];
 
@@ -92,12 +94,12 @@ export function ModePage() {
       <PageHeader
         eyebrow="第 1 步"
         title="选择对齐模式"
-        description="决定是否使用 LRC 的行时间作为锚点。切换模式会保留所有输入与人工修改，旧结果若不再适用会被明确标记。"
+        description={INTRO.mode}
         actions={<Button variant="primary" onClick={() => setStep('input')} icon={<ArrowRight className="size-4" />}>下一步：音频与歌词</Button>}
       />
       <div className="space-y-6">
         <Card>
-          <CardHeader title="模式" />
+          <CardHeader title="模式" help={<HelpButton k="mode.choice" />} />
           <CardBody className="space-y-4">
             <ModeChoice value={project.mode} onChange={setMode} />
             {view.mode_notice && <Callout tone="warn">{view.mode_notice}</Callout>}

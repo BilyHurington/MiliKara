@@ -9,6 +9,7 @@ import type { AudioAsset, Job } from '@/lib/types';
 import { cancelJob, isOpenProject, ppath, refreshProject, run, trackJob, useApp, useJob, useProject, useView } from '@/store/app';
 import { Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, Progress, Segmented } from '@/components/ui';
 import { DiagnosticsButton } from '@/components/DiagnosticsButton';
+import { HelpButton } from '@/components/guide/Help';
 
 export function SeparationCard() {
   const project = useProject()!;
@@ -33,7 +34,8 @@ export function SeparationCard() {
       <CardHeader
         icon={<Scissors className="size-4" />}
         title="人声分离"
-        description="可选：生成人声与伴奏分轨，用于对齐输入、试听和“人声保留”混音。分离不保证更准，异常句可在对齐时切回原曲比较。"
+        help={<HelpButton k="enhance.separation" />}
+        description="可选：分出人声和伴奏，用来对齐、试听，以及做伴唱 / 降低人声的视频。"
         actions={
           <Button variant="primary" size="sm" icon={<Scissors className="size-4" />} loading={!!running}
             disabled={!available || !hasOriginal || !!running} onClick={start}

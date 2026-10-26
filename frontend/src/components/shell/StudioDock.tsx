@@ -15,6 +15,7 @@ import { waveformRef } from '@/audio/waveformRef';
 import { resultFrom, setLayoutSize, toast, useApp, WAVE_HEIGHT, selectUnit, selectedUnitIds } from '@/store/app';
 import { setUnitTimes, retimeUnits } from '@/store/edits';
 import { Badge, IconButton, Kbd, ResizeHandle, Segmented, SliderField, Tip } from '@/components/ui';
+import { HelpButton } from '@/components/guide/Help';
 
 export function StudioDock() {
   const pv = useApp((s) => s.pv);
@@ -142,7 +143,8 @@ function Transport({ hasAudio }: { hasAudio: boolean }) {
 
       {loading.length > 0 && <Badge tone="info">加载 {loading.map((r) => ROLE_LABEL[r]).join('、')}…</Badge>}
 
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-1">
+        <HelpButton k="dock" />
         <IconButton label={open ? '收起波形' : '展开波形'} onClick={() => useApp.setState({ dockOpen: !open })}>
           {open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
         </IconButton>

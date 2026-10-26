@@ -14,6 +14,8 @@ import {
   Badge, Button, Callout, Card, CardBody, CardHeader, Dialog, EmptyState, Field, PageHeader, Segmented, Select, SliderField,
   Spinner, Tip,
 } from '@/components/ui';
+import { INTRO } from '@/lib/guide';
+import { HelpButton } from '@/components/guide/Help';
 
 const FORMAT_META: Record<string, { icon: typeof FileJson; group: 'result' | 'lyrics' | 'project'; note?: string }> = {
   alignment: { icon: FileJson, group: 'result', note: '完整标准输出：单元起止、未解决项、原始预测与人工覆盖、模型与输入快照' },
@@ -47,13 +49,14 @@ export function ExportPage() {
       <PageHeader
         eyebrow="第 9 步"
         title="导出"
-        description="对外时间统一为原音频起点起算的整数毫秒，导出不再叠加任何偏移。不能表达读音映射、终点、间隙或失败信息的格式会提示损失。"
+        description={INTRO.export}
       />
       <div className="space-y-6">
         <Card>
           <CardHeader
             title="导出的结果"
-            description="基于该结果生成结果类格式（JSON / CSV / 对齐 LRC）；卡拉OK字幕 ASS 总是使用当前结果"
+            help={<HelpButton k="export.results" />}
+            description="选择用哪个结果生成 JSON / CSV / LRC；卡拉OK字幕 ASS 总是用当前结果"
             actions={view.results.length > 0 && (
               <Select className="w-72" value={rid ?? ''} onChange={(e) => setRid(e.target.value)} aria-label="导出的结果">
                 {[...view.results].reverse().map((r) => (
@@ -274,8 +277,8 @@ function MixCard() {
 
   return (
     <Card>
-      <CardHeader icon={<Music2 className="size-4" />} title={hasVideo ? '人声保留混音（WAV / 视频）' : '人声保留混音 WAV'}
-        description="正常速度、原始时长与原点；“试听此混音”与导出使用同一规则，监听音量不写入导出。" />
+      <CardHeader icon={<Music2 className="size-4" />} title={hasVideo ? '降低人声的混音（WAV / 视频）' : '降低人声的混音 WAV'} help={<HelpButton k="export.mix" />}
+        description="“试听此混音”听到的就是导出的效果；播放器的音量只影响试听。" />
       <CardBody className="space-y-5">
         {!canMix ? (
           <EmptyState
@@ -298,7 +301,7 @@ function MixCard() {
             <Field group label="防削波">
               <div className="flex flex-wrap items-center gap-3">
                 <Segmented value={limiter} onChange={setLimiter} label="防削波"
-                  options={[{ value: 'normalize_peak', label: '共同母线峰值归一' }, { value: 'none', label: '不处理' }]} />
+                  options={[{ value: 'normalize_peak', label: '整体降低音量，避免破音' }, { value: 'none', label: '不处理' }]} />
                 {gain && (
                   <Tip content="对整段混音统一施加，保持两轨相对比例">
                     <span tabIndex={0} className="tabular rounded text-xs text-muted">母线增益 ×{gain.bus_gain.toFixed(3)} · 峰值 {gain.peak_before.toFixed(3)}</span>
@@ -349,7 +352,7 @@ function StemsCard() {
   const assets = project.audio.filter((a) => a.role !== 'mix');
   return (
     <Card>
-      <CardHeader icon={<Archive className="size-4" />} title="音轨" description="解码后的 PCM WAV（与对齐使用同一解码器，时间原点一致）" />
+      <CardHeader icon={<Archive className="size-4" />} title="音轨" help={<HelpButton k="export.tracks" />} description="WAV 格式，时间起点和对齐结果一致" />
       <div className="p-2">
         {assets.length === 0 ? (
           <p className="px-3 py-3 text-[13px] text-muted">还没有音频。</p>
@@ -375,7 +378,7 @@ function StemsCard() {
 function PackageCard() {
   return (
     <Card>
-      <CardHeader icon={<Package className="size-4" />} title="项目" description="歌词、校准、AI 往返、人工修改与结果都在项目文件中；不含模型权重或本机路径。" />
+      <CardHeader icon={<Package className="size-4" />} title="项目" help={<HelpButton k="export.project" />} description="歌词、读音、校准、人工修改和对齐结果都在项目里，可以带上音频一起打包。" />
       <div className="p-2">
         <Row title="便携项目包（含音频）" sub=".kara.zip，可在另一台电脑直接导入"
           action={<DownloadButton href={ppath('/package?include_audio=1')} big check={false} size="xs" variant="primary" icon={<Download className="size-3.5" />} aria-label="下载便携项目包（含音频）">下载</DownloadButton>} />

@@ -14,6 +14,7 @@ import { deleteSingerPreset, loadSingerPresets, saveSingerPreset } from '@/store
 import { Button, Card, CardBody, CardHeader, ConfirmButton, Input, NumberInput, Segmented, Select, Switch, Tip } from '@/components/ui';
 import { ColorField } from '@/components/karaoke/StylePanel';
 import { PictureField, pictureUrl } from '@/components/karaoke/PictureField';
+import { HelpButton } from '@/components/guide/Help';
 
 type Detail = 'color_unsung' | 'color_sung' | 'outline_color' | 'glow_unsung' | 'glow_sung';
 const DETAILS: [Detail, keyof SingerColors, string][] = [
@@ -71,7 +72,7 @@ export function SingerList({ singers, onChange, onRemove, onUsePreset, usage, gl
 
   return (
     <Card>
-      <CardHeader icon={<Users className="size-4" />} title="演唱者"
+      <CardHeader icon={<Users className="size-4" />} title="演唱者" help={<HelpButton k="singers.list" />}
         description="每人选一个主色，未唱、描边、荧光的颜色会自动搭配。右边的方块是快捷键，点一下再按新的键可以修改。" />
       <CardBody className="space-y-3">
         <PresetBar singers={singers} onUse={onUsePreset} />
@@ -133,7 +134,7 @@ export function SingerList({ singers, onChange, onRemove, onUsePreset, usage, gl
 
         {members.length >= 2 && (
           <div className="space-y-2 border-t border-line pt-3">
-            <div className="flex items-center gap-1.5 text-[13px] font-medium"><Keyboard className="size-4 text-muted" />组合快捷键</div>
+            <div className="flex items-center gap-1.5 text-[13px] font-medium"><Keyboard className="size-4 text-muted" />组合快捷键<HelpButton k="singers.combos" /></div>
             <p className="text-xs text-subtle">常一起唱的几个人可以存到一个键上，例如把 1+2 存到 {keyLabel(freeKey(singers) ?? '3')}：以后按一下就指定为两人一起唱。组合可以起个名字（如 全员），标注和分色列表里就写这个名字。</p>
             {combos.map((c, ci) => (
               <ComboRow key={ci} combo={c} count={members.length} colors={c.singers.map((n) => members[n - 1]?.color).filter(Boolean) as string[]}
@@ -156,7 +157,7 @@ export function SingerList({ singers, onChange, onRemove, onUsePreset, usage, gl
         )}
 
         <div className="space-y-2.5 border-t border-line pt-3">
-          <div className="text-[13px] font-medium">几个人一起唱的部分（默认）</div>
+          <div className="flex items-center gap-1 text-[13px] font-medium">几个人一起唱的部分（默认）<HelpButton k="singers.look" /></div>
           <div className="flex flex-wrap items-center gap-2">
             <Segmented size="sm" label="一起唱的效果" value={singers.mix} onChange={(v) => onChange({ ...singers, mix: v })}
               options={[{ value: 'split', label: '分色' }, { value: 'gradient', label: '渐变' }]} />
@@ -203,7 +204,7 @@ function LegendAndLabels({ singers, onChange }: { singers: KaraokeSingers; onCha
   const legend = singers.legend ?? true;
   return (
     <div className="space-y-2.5 border-t border-line pt-3">
-      <div className="text-[13px] font-medium">分色列表和演唱者标注</div>
+      <div className="flex items-center gap-1 text-[13px] font-medium">分色列表和演唱者标注<HelpButton k="singers.labels" /></div>
       <div className="flex flex-wrap items-center gap-2">
         <Switch checked={legend} onChange={(v) => onChange({ ...singers, legend: v })} label="开头显示分色列表" />
         {legend && (

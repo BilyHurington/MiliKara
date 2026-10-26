@@ -15,6 +15,8 @@ import {
   Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, Dialog, DropZone, EmptyState, Field, NumberInput, PageHeader,
   Progress, Segmented, Select, SliderField, Switch, Textarea,
 } from '@/components/ui';
+import { INTRO } from '@/lib/guide';
+import { HelpButton } from '@/components/guide/Help';
 
 export function AlignPage() {
   return (
@@ -22,7 +24,7 @@ export function AlignPage() {
       <PageHeader
         eyebrow="第 5 步"
         title="对齐"
-        description="用声学模型把已知歌词对齐到音频。模型加载后复用；声学分数按音频与模型缓存，修改读音、锚点或模式只需重新解码。"
+        description={INTRO.align}
         actions={<Button variant="primary" onClick={() => setStep('review')} icon={<ArrowRight className="size-4" />}>下一步：人工检查</Button>}
       />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -66,7 +68,7 @@ function Readiness() {
 
   return (
     <Card className="self-start">
-      <CardHeader title="准备情况" description={lrc ? 'LRC 增强模式' : '普通模式'} />
+      <CardHeader title="准备情况" help={<HelpButton k="align.ready" />} description={lrc ? 'LRC 增强模式' : '普通模式'} />
       <ul className="space-y-1 p-2">
         {items.map((it) => {
           const Icon = it.ok === true ? CheckCircle2 : it.ok === 'skip' ? CircleDashed : CircleAlert;
@@ -135,7 +137,7 @@ function RunCard() {
 
   return (
     <Card>
-      <CardHeader icon={<Settings2 className="size-4" />} title="对齐设置" description="设置随项目保存；运行时使用当前输入的快照。" />
+      <CardHeader icon={<Settings2 className="size-4" />} title="对齐设置" help={<HelpButton k="align.settings" />} description="设置随项目保存。" />
       <CardBody className="space-y-5">
         <div className="grid gap-5 md:grid-cols-2">
           <Field group label="对齐输入音频" hint={hasVocals ? '人声使用未衰减的分离人声；分离不保证更准，异常句可切回原曲比较'
@@ -195,24 +197,28 @@ function RunCard() {
           </button>
           {advanced && (
             <div className="space-y-5 border-t border-line px-4 py-4">
+              <div className="flex items-start gap-2 rounded-lg bg-surface-2/60 px-3 py-2 text-xs text-muted">
+                <span className="min-w-0 flex-1">默认值适合绝大多数歌，一般不用改。只在某些行总是对不好时再试着调整。</span>
+                <HelpButton k="align.advanced" />
+              </div>
               <div className="space-y-3">
-                <div className="text-xs font-semibold text-muted">LRC 软锚点（仅增强模式）</div>
+                <div className="text-xs font-semibold text-muted">LRC 歌词时间的约束（仅 LRC 增强）</div>
                 <ConfigSlider label="容差 σ" unit="ms" min={50} max={2000} step={10} value={cfg.decode.soft_sigma_ms}
                   onCommit={(v) => patchDecode({ soft_sigma_ms: v })} />
                 <ConfigSlider label="先验强度 λ" unit="" min={0} max={20} step={0.5} value={cfg.decode.soft_lambda}
                   onCommit={(v) => patchDecode({ soft_lambda: v })} />
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Field label="左边距" hint="解码窗口向前扩展">
+                <Field label="左边距" hint="每行往前多找多长">
                   <NumberInput value={cfg.decode.left_margin_ms} suffix="ms" onCommit={(v) => v !== null && patchDecode({ left_margin_ms: v })} />
                 </Field>
-                <Field label="右边距" hint="下一句首之后">
+                <Field label="右边距" hint="可以拖到下一句开头之后多久">
                   <NumberInput value={cfg.decode.right_margin_ms} suffix="ms" onCommit={(v) => v !== null && patchDecode({ right_margin_ms: v })} />
                 </Field>
-                <Field label="硬锚点容差" hint="人工锚点允许区间">
+                <Field label="硬锚点容差" hint="人工锚点允许的误差">
                   <NumberInput value={cfg.decode.hard_tolerance_ms} suffix="ms" onCommit={(v) => v !== null && patchDecode({ hard_tolerance_ms: v })} />
                 </Field>
-                <Field label="紧邻联合阈值" hint="间隔小于此值的句子联合对齐">
+                <Field label="紧邻联合阈值" hint="间隔更短的几句放在一起对齐">
                   <NumberInput value={cfg.decode.tight_gap_ms} suffix="ms" onCommit={(v) => v !== null && patchDecode({ tight_gap_ms: v })} />
                 </Field>
               </div>
@@ -226,7 +232,7 @@ function RunCard() {
               <Switch
                 checked={cfg.retry.enabled}
                 onChange={(v) => patchConfig({ retry: { enabled: v } })}
-                label={<span>异常句有限重试 <span className="text-muted">（放宽容差、联合邻句、切换音轨、已确认的读音候选；限制候选预算）</span></span>}
+                label={<span>异常句有限重试 <span className="text-muted">（对不好的行自动换几种方法再试一次，比如放宽范围、和相邻句一起对齐、换用原曲或人声）</span></span>}
               />
             </div>
           )}
@@ -254,9 +260,9 @@ function ConfigSlider({ value, onCommit, ...rest }: Omit<ComponentProps<typeof S
 
 const TAIL_LABEL = { off: '关闭', trim: '保守裁短', energy: '人声能量修正' } as const;
 const TAIL_HINT = {
-  off: '默认：保留模型边界',
-  trim: '只在受限范围内裁短明显过长的尾音',
-  energy: '在受限局部范围内使用人声持续发声证据修正；记录原值、方法与原因，不覆盖人工锁',
+  off: '默认：用模型给出的结尾',
+  trim: '只把明显过长的尾音裁短一些',
+  energy: '按人声实际持续的长度修正一句最后拖长的音（只在附近小范围内调整，人工改过的不动）',
 } as const;
 
 function JobCard({ job }: { job: Job }) {
@@ -301,7 +307,8 @@ function ResultsCard() {
     <Card>
       <CardHeader
         title="对齐结果"
-        description="每次运行生成一个新结果；局部重跑生成局部结果，不会覆盖原结果。"
+        help={<HelpButton k="align.results" />}
+        description="每次对齐生成一个新结果；局部重跑生成局部结果，不会覆盖原结果。"
         actions={<Button size="sm" variant="outline" onClick={() => setImportOpen(true)} icon={<FileJson className="size-4" />}>导入 alignment.json</Button>}
       />
       <div className="p-2">

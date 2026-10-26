@@ -21,6 +21,8 @@ import { assignSingers, flushSingers, removeSinger, saveSingers, applySingerPres
 import { Badge, Button, Callout, Card, CardBody, CardHeader, Input, Kbd, PageHeader, Segmented, Switch } from '@/components/ui';
 import { MarkersDialog } from './singers/MarkersDialog';
 import { SingerList } from './singers/SingerList';
+import { INTRO } from '@/lib/guide';
+import { HelpButton } from '@/components/guide/Help';
 
 const NO_SINGERS: KaraokeSingers = { members: [], mix: 'split', direction: 'vertical' };
 
@@ -313,7 +315,7 @@ export function SingersPage() {
       <PageHeader
         eyebrow="第 7 步（可选）"
         title="演唱者"
-        description="多人演唱时，给每位歌手不同的字幕颜色：先在右边添加演唱者，再选中歌词按快捷键指定。几个人一起唱的部分，每个字分成几种颜色（上下或左右，也可以渐变）。单人演唱的歌曲不需要这一步。"
+        description={INTRO.singers}
         actions={<Button onClick={() => setStep('karaoke')} icon={<ArrowRight className="size-4" />}>下一步：卡拉OK字幕</Button>}
       />
       {markers > 0 && (
@@ -583,7 +585,7 @@ function PreviewCard({ style, times, hasResult, refresh }: {
   const pic = useApp((s) => s.pv?.view.picture);
   return (
     <Card>
-      <CardHeader icon={<Subtitles className="size-4" />} title="预览"
+      <CardHeader icon={<Subtitles className="size-4" />} title="预览" help={<HelpButton k="singers.preview" />}
         actions={<Segmented size="sm" label="预览时刻" value={when} onChange={setWhen}
           options={[{ value: 'before', label: '唱之前' }, { value: 'mid', label: '唱到一半' }, { value: 'after', label: '唱完' }]} />} />
       <CardBody className="space-y-2">

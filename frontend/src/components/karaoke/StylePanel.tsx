@@ -18,6 +18,7 @@ import { deleteStyle, loadSavedStyles, sameLook, saveStyle, useLibrary } from '@
 import { arrowNav, Badge, Button, Input, Segmented, Select, SliderField, Switch, Textarea, Tip } from '@/components/ui';
 import { ColorRow, TEMPLATE_LABEL } from './ThemeColors';
 import { PictureField } from './PictureField';
+import { HelpButton } from '@/components/guide/Help';
 import { COUNTDOWN_DEFAULTS } from '@/lib/countdown';
 
 const DECOR_DEFAULTS: NonNullable<KaraokeStyle['decor']> = { start: '', end: '', color: '', size_pct: 80, start_picture: '', end_picture: '' };
@@ -102,6 +103,7 @@ interface SectionProps { id: SectionId; icon: ReactNode; title: string; summary:
 function Section({ id, title, children }: SectionProps) {
   return (
     <section role="tabpanel" aria-label={title} data-section={id} className="space-y-4 px-1 pt-4 pb-2">
+      <div className="-mt-2 -mb-2 flex items-center justify-end gap-0.5 text-xs text-subtle">关于“{title}”<HelpButton k={`style.${id}`} /></div>
       {children}
     </section>
   );

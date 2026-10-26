@@ -359,6 +359,18 @@ describe('subtitle style panel in the simple-mode settings', () => {
     await waitFor(() => expect((api.find('PUT', '/api/settings').at(-1)!.body.simple.karaoke as KaraokeStyle).ruby.script).toBe('katakana'), { timeout: 2000 });
   });
 
+  it('the tips dismissed come back from 更新与反馈', async () => {
+    seed();
+    settingsServer();
+    localStorage.setItem('kara.guide.dismissed', JSON.stringify(['simple.welcome']));
+    const { dismiss } = await import('@/components/guide/Help');
+    dismiss('review.first');
+    renderUI(<SimpleSettings />);
+    await userEvent.click(screen.getByRole('tab', { name: '更新与反馈' }));
+    await userEvent.click(screen.getByRole('button', { name: '重新显示使用提示' }));
+    expect(JSON.parse(localStorage.getItem('kara.guide.dismissed')!)).toEqual([]);
+  });
+
   it('translation has its own style and the display advance / fades live under 时间', async () => {
     seed();
     const api = settingsServer();

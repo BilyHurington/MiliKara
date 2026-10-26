@@ -9,6 +9,7 @@ import type { StorageInfo, StorageProject } from '@/lib/types';
 import { deleteProject, loadProjects, run, toast } from '@/store/app';
 import { loadTasks } from '@/store/simple';
 import { Badge, Button, ConfirmButton, Dialog, IconButton, Spinner } from '@/components/ui';
+import { HelpButton } from '@/components/guide/Help';
 
 const PART_LABEL: Record<keyof StorageProject['parts'], string> = {
   media: '视频和原曲', stems: '人声分离', background: '背景', exports: '导出的文件', unused: '残留文件', other: '其他',
@@ -76,7 +77,7 @@ export function StorageDialog({ open, onOpenChange }: { open: boolean; onOpenCha
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} wide title="存储空间"
-      description={info ? <>项目保存在 <code className="font-mono text-xs break-all">{info.root}</code></> : undefined}>
+      description={<span className="flex items-center gap-1">{info ? <span>项目保存在 <code className="font-mono text-xs break-all">{info.root}</code></span> : null}<HelpButton k="storage" /></span>}>
       {!info ? (
         <div className="grid place-items-center py-10"><Spinner /></div>
       ) : (

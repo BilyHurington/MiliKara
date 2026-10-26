@@ -3,6 +3,8 @@ import { Activity, Download, Moon, Redo2, Sparkles, Sun, Undo2, X } from 'lucide
 import { cn } from '@/lib/format';
 import { errorHint } from '@/lib/errorHints';
 import { DiagnosticsButton } from '@/components/DiagnosticsButton';
+import { HelpButton } from '@/components/guide/Help';
+import { ShortcutsButton } from '@/components/guide/Shortcuts';
 import { MOD_KEY, SHIFT_KEY } from '@/lib/keys';
 import { cancelJob, isOpenProject, ppath, projectName, run, setTheme, STEPS, useApp } from '@/store/app';
 import { hasActiveTasks, setUi, useSimple } from '@/store/simple';
@@ -28,7 +30,7 @@ export function Topbar() {
             <span className="hidden text-subtle md:inline">/</span>
             <span className="hidden text-muted md:inline">{stepLabel}</span>
             <Badge tone={pv.project.mode === 'lrc' ? 'accent' : 'neutral'} className="ml-1 hidden sm:inline-flex">{pv.project.mode === 'lrc' ? 'LRC 增强' : '普通模式'}</Badge>
-            {staleCount > 0 && <Badge className="hidden lg:inline-flex" tone="warn" dot title="输入已修改，这些结果仍可查看但不再对应当前设置">{staleCount} 个结果已过期</Badge>}
+            {staleCount > 0 && <Badge className="hidden lg:inline-flex" tone="warn" dot title="改过歌词、读音、校准、模式或换了原曲：这些结果仍可查看，但不再对应现在的输入。到“对齐”重新对齐即可（人工改过的时间会保留）">{staleCount} 个结果已过期</Badge>}
           </>
         ) : (
           <span className="font-medium">项目</span>
@@ -51,6 +53,7 @@ export function Topbar() {
               icon={<Download className="size-4" />}><span className="hidden md:inline">项目包</span></DownloadButton>
           </Tip>
         )}
+        {pv && <ShortcutsButton />}
         <span className="mx-1 h-5 w-px bg-line" />
         {/* same place as the simple mode's “详细模式” switch */}
         <button onClick={() => setUi('simple')} title="切换到极简模式：放入视频和歌词，一键生成卡拉OK视频；任务队列也在那里"
@@ -58,6 +61,7 @@ export function Topbar() {
           <Sparkles className="size-4 text-accent" /><span className="hidden sm:inline">极简模式</span>
           <QueueCount />
         </button>
+        <HelpButton k="ui.modes" />
         <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="切换主题" title={theme === 'dark' ? '浅色模式' : '深色模式'}
           className="focus-ring grid size-8 place-items-center rounded-lg text-muted transition hover:bg-surface-2 hover:text-fg">
           {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
@@ -69,10 +73,11 @@ export function Topbar() {
 
 function JobsIndicator() {
   const jobs = Object.values(useApp((s) => s.jobs));
+  const inProject = useApp((s) => !!s.pv);
   const active = jobs.filter((j) => j.status === 'queued' || j.status === 'running');
   if (!jobs.length) {
     return (
-      <Tip content={<span>没有进行中的操作。快捷键：<Kbd>Space</Kbd> 播放 <Kbd>L</Kbd> 循环 <Kbd>M</Kbd> 标记（首音校准） <Kbd>{MOD_KEY}</Kbd>+<Kbd>Z</Kbd> 撤销</span>}>
+      <Tip content={<span>没有进行中的操作（对齐、分离、生成视频等会显示在这里）。{inProject && <>快捷键见旁边的键盘按钮，或按 <Kbd>?</Kbd></>}</span>}>
         <span tabIndex={0} className="focus-ring hidden items-center gap-1.5 rounded px-2 text-xs text-subtle lg:flex"><Activity className="size-3.5" />空闲</span>
       </Tip>
     );

@@ -9,6 +9,7 @@ import { readFileText } from '@/lib/format';
 import type { ProjectView, TrackPreview } from '@/lib/types';
 import { ppath, run, setPV, toast, useProject } from '@/store/app';
 import { Badge, Button, Card, CardBody, CardHeader, DropZone, Input, Segmented, Select, Table, Td, Textarea, Th } from '@/components/ui';
+import { HelpButton } from '@/components/guide/Help';
 
 type Kind = 'translation' | 'romanization';
 
@@ -89,7 +90,8 @@ export function PairingCard({ extraTracks }: { extraTracks: Record<string, strin
       <CardHeader
         title="翻译 / 音译轨"
         icon={<Languages className="size-4" />}
-        description="原文、翻译、音译分开保存，默认只有演唱原文参与对齐。配对优先按时间一致，其次最近时间，最后按顺序；可逐行修正。"
+        help={<HelpButton k="input.pairing" />}
+        description="翻译和音译只用于字幕，按时间自动配到原文行上，可以逐行修改。"
         actions={existing > 0 ? <Badge tone="ok">已配对 {existing} 行</Badge> : undefined}
       />
       <CardBody className="space-y-4">

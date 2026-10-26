@@ -10,6 +10,7 @@ import type { FetchedSong, LinkResult, LyricsPreview, SongRef } from '@/lib/type
 import { ppath, run, setPV, toast, useProject } from '@/store/app';
 import { Badge, Button, Card, CardBody, CardHeader, DropZone, EmptyState, Input, Tabs, Textarea } from '@/components/ui';
 import { PreviewPanel } from './PreviewPanel';
+import { HelpButton } from '@/components/guide/Help';
 
 export interface PendingPreview {
   preview: LyricsPreview;
@@ -83,6 +84,7 @@ export function LyricsInputCard({ onExtraTracks }: { onExtraTracks: (tracks: Rec
       <CardHeader
         title="歌词"
         icon={<FileText className="size-4" />}
+        help={<HelpButton k="input.lyrics" />}
         description={hasLyrics
           ? '重新导入会替换当前歌词文档；旧结果仍可查看但会标记为过期。'
           : '粘贴、上传文件或通过音乐链接获取；三种方式共用同一解析与预览，确认后才会应用。'}

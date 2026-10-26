@@ -11,6 +11,7 @@ import { DeleteLineButton } from '@/components/DeleteLineButton';
 import {
   Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, Dialog, EmptyState, Field, Input, Segmented, Switch, Tip,
 } from '@/components/ui';
+import { HelpButton } from '@/components/guide/Help';
 
 type Filter = 'all' | 'uncertain' | 'manual';
 
@@ -74,7 +75,8 @@ export function ReadingsCard() {
       <CardHeader
         icon={<Languages className="size-4" />}
         title="读音与发音单元"
-        description="每个片段上方为原文，下方为获得时间的发音单元。点击片段即可修改读音；人工 / AI / 已确认的读音不会被规则覆盖。"
+        help={<HelpButton k="enhance.readings" />}
+        description="每个词下面是它的读音，切成一拍一拍的发音单元。点词修改；人工、AI 和确认过的读音不会被规则覆盖。"
         actions={
           <>
             <Tip content="关闭时只为还没有读音的片段填充规则读音">

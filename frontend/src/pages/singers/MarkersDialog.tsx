@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { run, toast, useApp } from '@/store/app';
 import { applyMarkers, loadMarkers, type Markers } from '@/store/singers';
 import { Button, Callout, Dialog, Switch } from '@/components/ui';
+import { HelpButton } from '@/components/guide/Help';
 
 export function MarkersDialog({ open, onOpenChange, onApplied }: {
   open: boolean; onOpenChange: (v: boolean) => void; onApplied?: () => void;
@@ -43,7 +44,7 @@ export function MarkersDialog({ open, onOpenChange, onApplied }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} wide title="识别歌词里的演唱者"
-      description="这些行的开头写着演唱者。勾选真正是演唱者的名字（把“Hey!”之类误认的取消），确认后按名字建立演唱者、给这些行指定。"
+      description={<span className="flex items-start gap-1">这些行的开头写着演唱者。勾选真正是演唱者的名字，确认后按名字建立演唱者、给这些行指定。<HelpButton k="singers.markers" /></span>}
       footer={<>
         <Button variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
         <Button variant="primary" loading={busy} disabled={!chosen.size} onClick={() => void apply()}>指定 {data ? data.lines.length : ''} 行</Button>
