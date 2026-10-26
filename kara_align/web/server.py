@@ -1080,6 +1080,30 @@ def create_app(root: Optional[Path] = None, jobs: Optional[JobManager] = None,
         changed = guard(S.remove_singer, h, number)
         return view(h, changed=changed)
 
+    @app.post("/api/karaoke/pictures")
+    async def upload_picture(file: UploadFile = File(...)):
+        """A picture for the subtitles (a singer's, a symbol at the ends of the lines): kept once in the
+        home folder, used by its id from any style."""
+        from ..karaoke.pictures import MAX_PICTURE_BYTES, save_picture
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / "picture"
+            await _save_upload(file, tmp, MAX_PICTURE_BYTES)
+            try:
+                return await run_in_threadpool(save_picture, tmp.read_bytes())
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from e
+
+    @app.get("/api/karaoke/pictures/{picture_id}")
+    def get_picture(picture_id: str):
+        from ..karaoke.pictures import picture_path
+
+        p = picture_path(picture_id)
+        if p is None:
+            raise HTTPException(404, "没有这张图片")
+        # named by its content: never changes
+        return FileResponse(p, media_type="image/png", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
     @app.post("/api/karaoke/singer-colors")
     def singer_colors(body: dict):
         """Every colour of these singers, the derived ones filled in (for the editor)."""

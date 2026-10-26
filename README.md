@@ -80,7 +80,7 @@ uv pip install "torch[device-gfx1100]" --index-url https://stable.repo.amd.com/r
 
 模型在第一次使用时下载到项目目录的 `models/` 里（对齐模型约 1.2 GB，默认的分离模型约 1 GB），之后可以离线使用。环境变量 `KARA_ALIGN_MODELS` 可以把它指到别处。
 
-可选：`python packaging/fetch_fonts.py` 下载内置的中日文字体 Noto Sans CJK（约 40 MB，SIL OFL）到 `fonts/`。Windows / Linux 上它是默认字体，歌词、翻译或歌曲信息里有当前字体没有的字时也会用它；离线包里已经自带。
+可选：`python packaging/fetch_fonts.py` 下载内置的中日文字体 Noto Sans CJK（约 40 MB）和彩色 emoji 字体 Noto Color Emoji（约 10 MB，均为 SIL OFL）到 `fonts/`。Windows / Linux 上 Noto Sans CJK 是默认字体，歌词、翻译或歌曲信息里有当前字体没有的字时也会用它；字幕里的彩色 emoji 来自 Noto Color Emoji（没有时 macOS 用系统的 Apple Color Emoji）。离线包里已经自带。
 
 ## 使用
 

@@ -518,11 +518,29 @@ describe('colour template requests (F-M12)', () => {
       return <StylePanel style={s} onChange={setS} fonts={[]} defaultFont="" defaultSection="text" />;
     }
     renderUI(<Host />);
-    expect(screen.queryByLabelText('颜色（同歌词未唱）')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('文字颜色（同歌词未唱）')).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole('textbox', { name: '每句结尾的符号' }), { target: { value: '★' } });
-    expect(latest.decor).toEqual({ start: '', end: '★', color: '', size_pct: 80 });
-    fireEvent.change(screen.getByLabelText('颜色（同歌词未唱）'), { target: { value: '#ff0000' } });
+    expect(latest.decor).toEqual({ start: '', end: '★', color: '', size_pct: 80, start_picture: '', end_picture: '' });
+    fireEvent.change(screen.getByLabelText('文字颜色（同歌词未唱）'), { target: { value: '#ff0000' } });
     expect(latest.decor!.color).toBe('#FF0000');
+  });
+
+  it('a picture at the start of every line: uploaded, shown, removed', async () => {
+    const api = mockApi({ 'GET /api/karaoke/styles': () => [builtinSaved()], 'POST /api/karaoke/pictures': () => ({ id: '0123456789abcdef', width: 40, height: 40 }) });
+    let latest: KaraokeStyle = plainStyle();
+    function Host() {
+      const [s, setS] = useState(latest);
+      latest = s;
+      return <StylePanel style={s} onChange={setS} fonts={[]} defaultFont="" defaultSection="text" />;
+    }
+    const { container } = renderUI(<Host />);
+    const file = new File([new Uint8Array([137, 80, 78, 71])], 'a.png', { type: 'image/png' });
+    fireEvent.change(container.querySelectorAll('input[type=file]')[0], { target: { files: [file] } });
+    await waitFor(() => expect(latest.decor?.start_picture).toBe('0123456789abcdef'));
+    expect(api.find('POST', '/api/karaoke/pictures')[0].body).toBeInstanceOf(FormData);
+    expect(screen.getByRole('button', { name: '更换每句开头的图片' }).querySelector('img')).toHaveAttribute('src', '/api/karaoke/pictures/0123456789abcdef');
+    fireEvent.click(screen.getByRole('button', { name: '移除每句开头的图片' }));
+    expect(latest.decor?.start_picture).toBe('');
   });
 
   it('mergeThemeColors takes only what a template decides', () => {

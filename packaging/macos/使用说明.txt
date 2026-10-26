@@ -13,7 +13,7 @@ MiliKara（macOS · Apple 芯片）离线版  @VERSION@
 
 二、说明
 - 需要：Apple 芯片的 Mac（M1 及以后），macOS 14.8.5（Sonoma 的最新更新）或更新版本，包括 macOS 15、26。
-- 已经包含：Python 运行环境、全部依赖、ffmpeg（含 libass 字幕渲染）、中日文字体 Noto Sans CJK，以及两个模型——
+- 已经包含：Python 运行环境、全部依赖、ffmpeg（含 libass 字幕渲染）、中日文字体 Noto Sans CJK、彩色 emoji 字体 Noto Color Emoji，以及两个模型——
   对齐模型 NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn 和人声分离模型 MelBand RoFormer。
   对齐、分离、生成视频都不需要联网。
 - 需要联网的只有：从网易云 / QQ 音乐链接获取歌词，以及 AI 注音（选 Claude Code / Codex / API 时）。
@@ -34,6 +34,7 @@ MiliKara（macOS · Apple 芯片）离线版  @VERSION@
 - MiliKara 本身：MIT（见 LICENSE-MiliKara.txt）。
 - 对齐模型：CC-BY-NC-SA-4.0（非商用）。
 - 自带字体 Noto Sans CJK：SIL Open Font License 1.1（见 fonts/LICENSE-NotoSansCJK.txt）。
+- 自带字体 Noto Color Emoji：SIL Open Font License 1.1（见 fonts/LICENSE-NotoColorEmoji.txt）。
 - ffmpeg：GPL v3（见 ffmpeg/README-ffmpeg.txt）；Python、PyTorch、transformers、python-audio-separator 等依赖
   各自遵循它们自己的许可（见 python/lib/python3.12/site-packages 里各包的 LICENSE）。
 - 请只处理你有权使用的音视频和歌词。

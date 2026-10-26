@@ -281,6 +281,8 @@ Warnings say when the result is stale or partial and how many lines were skipped
 | POST | `/api/karaoke/singer-presets` | `{name, singers, id?}` | the saved preset (no `id`: a new one, or the one of that name replaced; 400: no name, no singers, invalid singers) |
 | DELETE | `/api/karaoke/singer-presets/{id}` | – | `{ok}` |
 | DELETE | `/api/projects/{pid}/karaoke/singers/{n}` | – | `ProjectView` + `changed` (lines whose assignment changed): singer `n` (1-based) removed, its parts go back to the line's other singers, later numbers move down by one (in combinations too; one left with fewer than two singers is removed) |
+| POST | `/api/karaoke/pictures` | multipart `file` (PNG / JPEG / WebP / GIF, ≤ 10 MB) | `{id, width, height}`: kept as a PNG at most 512 px, transparent margins cut, in `<home>/pictures/<id>.png` (`id`: 16 hex of its SHA-256; the same image twice is one file); 400 when it is not an image |
+| GET | `/api/karaoke/pictures/{id}` | – | the picture (`image/png`, cached forever); 404 |
 | POST | `/api/karaoke/singer-colors` | `{members: [KaraokeSinger]}` | `[{sung, unsung, outline, glow_sung, glow_unsung, translation, sparkle}]`: each singer's colours with the derived ones filled in |
 | PUT | `/api/projects/{pid}/singers` | `{lines: [{line_id, singers, spans: [{start, end, singers}], text?}]}` | `ProjectView`: who sings these lines (replaces their assignment; `text`: the line's text the spans were made for, 400 when it changed since) |
 | GET | `/api/projects/{pid}/singers/markers` | – | `{lines: [{line_id, text, prefix, names, everyone}], names, existing}`: lines that start with singer names (“A：”, “（XX）”, “【XX】”; a name must start at least two lines) |
@@ -313,10 +315,18 @@ square of its colours (a blended combination in stripes) — only when at least 
 "off"|"start"|"end": who sings each line written before / after it, in each singer's colour with its glow (one singer: one
 row; two: one row each, the upper row's characters starting where the lyric's start and the lower's ending where they end;
 more: the first half above, joined by "/"; a combination with a label: that, in the lyrics' colour). `KaraokeStyle.decor =
-{start, end, color, size_pct}`: text / font symbols (≤ 12 characters; colour emoji and pictures are not drawn) at the start /
-end of every line, `color` "" = the lyrics' unsung colour, `size_pct` 80 (30–150) of the lyric size. Labels are outermost,
+{start, end, color, size_pct, start_picture, end_picture}`: text / font symbols (≤ 12 characters; colour emoji in their own
+colours) and a picture (outermost) at the start / end of every line, `color` "" = the lyrics' unsung colour, `size_pct` 80 (30–150) of the lyric size. Labels are outermost,
 symbols next to the lyric; both count in the line's width (centring, wrapping, shrinking); a wrapped line has the start ones
 on its first half and the end ones on its second.
+Pictures: `members[].picture` / `decor.start_picture` / `decor.end_picture` are ids of uploaded pictures ("" = none);
+`singers.label_content` "both"|"picture"|"text": a singer with a picture is labelled by picture and name, the picture
+alone, or the name (one row: the picture as tall as the lyric's em; two rows: as its row's); in the legend the picture is
+between the swatch and the name. Colour emoji in any of these texts (and in the title card) are pictures too, from the
+bundled Noto Color Emoji. Every picture is drawn as ASS vector drawings of its pixels (at most 64 colours, one event per
+colour with `\an7\pos` on whole pixels, no outline), so libass, the preview and the exported ASS show it alike. A picture
+missing on this computer is left out with a warning. Project packages carry the pictures their style uses
+(`pictures/<id>.png`, taken on import only when the name is the content's hash).
 A translation keeps its own colours (`KTrans`); with `translation.singer_glow` (default true) its glow takes the line's singers' glow colours, several blended from left to right in the order they sing (never top to bottom); false: the translation's own glow.
 Who sings is kept in the lyrics: `Line.singers` (numbers, 1-based; several = together; empty = the style's own colours) and
 `Line.singer_spans: [{start, end, singers}]` (character ranges of `Line.text` sung by others than the line's singers;

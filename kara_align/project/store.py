@@ -238,10 +238,13 @@ def asset_abspath(project_dir: Path, rel: Optional[str]) -> Optional[Path]:
 
 
 def export_package(project: Project, project_dir: Path, out_path: Path, include_audio: bool = True) -> Path:
-    """Write a portable zip: project.json plus (optionally) referenced audio.
+    """Write a portable zip: project.json plus (optionally) referenced audio, and the pictures its
+    subtitle style uses (``pictures/<id>.png``).
 
     Never includes model weights, caches, keys or absolute paths.
     """
+    from ..karaoke.pictures import picture_path, referenced
+
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -251,6 +254,10 @@ def export_package(project: Project, project_dir: Path, out_path: Path, include_
                 src = asset_abspath(project_dir, a.path)
                 if src and src.exists():
                     zf.write(src, arcname=str(PurePosixPath("assets") / src.name), compress_type=zipfile.ZIP_STORED)
+        for pid in sorted(referenced(project.karaoke)):
+            src = picture_path(pid)
+            if src is not None:
+                zf.write(src, arcname=f"pictures/{pid}.png", compress_type=zipfile.ZIP_STORED)
     return out_path
 
 
@@ -274,11 +281,18 @@ def import_package(zip_path: Path, dest_dir: Path, max_total_bytes: int = 4 * 10
                 continue
             if name.is_absolute() or ".." in name.parts:
                 raise ProjectError(f"包内路径不安全: {info.filename}")
-            if not (str(name) == PROJECT_FILE or (len(name.parts) == 2 and name.parts[0] == "assets")):
+            picture = len(name.parts) == 2 and name.parts[0] == "pictures" and name.suffix == ".png"
+            if not (str(name) == PROJECT_FILE or (len(name.parts) == 2 and name.parts[0] == "assets") or picture):
                 continue  # ignore anything unexpected
             total += info.file_size
             if total > max_total_bytes:
                 raise ProjectError("包内容过大")
+            if picture:  # the subtitle style's pictures: kept with the others (never in the project folder)
+                from ..karaoke.pictures import MAX_PICTURE_BYTES, adopt_picture
+
+                if info.file_size <= MAX_PICTURE_BYTES:
+                    adopt_picture(name.stem, zf.read(info))
+                continue
             target = dest_dir / name
             target.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(info) as src, open(target, "wb") as dst:

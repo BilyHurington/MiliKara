@@ -101,7 +101,7 @@ def test_legend(tmp_path):
     assert [r[0] for r in legend_entries(h.project, st)] == ["Ann（A）", "Bo, b"]
     st.singers.combos = [KaraokeSingerCombo(key="3", singers=[2, 1], mix="gradient", label="一起")]
     rows = legend_entries(h.project, st)
-    assert rows[-1] == ("一起", ["#ED35B3", "#2F80ED"], "gradient")
+    assert rows[-1] == ("一起", ["#ED35B3", "#2F80ED"], "gradient", "")
     text, _ = S.karaoke_ass(h)
     card = [e for e in text.splitlines() if ",KInfo," in e]
     assert any(e.endswith("}Ann（A）") for e in card) and any(e.endswith("}一起") for e in card)

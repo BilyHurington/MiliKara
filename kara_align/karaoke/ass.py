@@ -1236,6 +1236,16 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
             i = j + 1
         return out
 
+    def emit_picture(key: str, x: float, top: float, w: float, h: float, t_from: float, t_to: float,
+                     fad: str) -> None:
+        """A picture (karaoke.pictures) drawn pixel by pixel from whole pixels at (x, top), one event a
+        colour (crisp: no outline, no shadow)."""
+        from .pictures import drawing
+
+        for tags, path in drawing(key, max(1, round(w)), max(1, round(h))):
+            emit(L_MAIN, t_from, t_to, "KMain", f"\\an7\\pos({round(x)},{round(top)})\\bord0\\shad0\\blur0{tags}\\p1",
+                 path, fad)
+
     def emit_tags(tags: Any, left: float, main_y: float, scale: float, t_from: float, t_to: float, fad: str,
                   before: bool) -> None:
         """The blocks at one end of a line (karaoke.linetags), from ``left``: each in its own colours and
@@ -1248,15 +1258,34 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
             ratio = max(0.6, b.size / main_size)  # a thin outline would not hold small text
             font = f"\\fn{tagger.family}" if tagger.family != family else ""
             look = f"{font}\\fs{b.size * scale:.1f}\\bord{txt.outline * k * ratio:.2f}\\shad{txt.shadow * k * ratio:.2f}"
-            for row, y in zip(b.rows, tagger.row_baselines(b, main_y, scale)):
-                body = "".join(f"{{\\1c{bgr_tag(c)}}}{escape_text(t)}" for t, c, _ in row)
-                pos = (f"\\an3\\pos({x + b.width * scale:.1f},{y:.1f})" if before
-                       else f"\\an1\\pos({x:.1f},{y:.1f})")
-                if glow.enabled:
-                    halo = "".join(f"{{\\3c{bgr_tag(g)}}}{escape_text(t)}" for t, _, g in row)
-                    emit(L_GLOW, t_from, t_to, "KGlow", pos + glow_tags(row[0][2], glow.size * k * ratio, tagger.family,
-                                                                          b.size * scale, txt.bold), halo, fad)
-                emit(L_MAIN, t_from, t_to, "KMain", pos + look, body, fad)
+            for row, y, places, row_w in zip(b.rows, tagger.row_baselines(b, main_y, scale), b.places, b.row_widths):
+                if not any(r[3] for r in row):
+                    # text only: one event (and its glow), as libass sets it
+                    body = "".join(f"{{\\1c{bgr_tag(c)}}}{escape_text(t)}" for t, c, _, _ in row)
+                    pos = (f"\\an3\\pos({x + b.width * scale:.1f},{y:.1f})" if before
+                           else f"\\an1\\pos({x:.1f},{y:.1f})")
+                    if glow.enabled:
+                        halo = "".join(f"{{\\3c{bgr_tag(g)}}}{escape_text(t)}" for t, _, g, _ in row)
+                        emit(L_GLOW, t_from, t_to, "KGlow", pos + glow_tags(row[0][2], glow.size * k * ratio,
+                                                                              tagger.family, b.size * scale, txt.bold),
+                             halo, fad)
+                    emit(L_MAIN, t_from, t_to, "KMain", pos + look, body, fad)
+                    continue
+                # with pictures: each run where the block's layout puts it (a row hugs the lyric)
+                row_x = x + ((b.width - row_w) * scale if before else 0.0)
+                for (t, c, g, pic), p in zip(row, places):
+                    rx = row_x + p.x * scale
+                    if pic:
+                        h = p.height * scale
+                        emit_picture(pic, rx, tagger.picture_top(b, y, h, scale), p.width * scale, h,
+                                     t_from, t_to, fad)
+                        continue
+                    pos = f"\\an1\\pos({rx:.1f},{y:.1f})"
+                    if glow.enabled:
+                        emit(L_GLOW, t_from, t_to, "KGlow", pos + glow_tags(g, glow.size * k * ratio, tagger.family,
+                                                                              b.size * scale, txt.bold),
+                             escape_text(t), fad)
+                    emit(L_MAIN, t_from, t_to, "KMain", pos + look, f"{{\\1c{bgr_tag(c)}}}{escape_text(t)}", fad)
             x += b.width * scale
             if before:
                 x += tags.gap * scale
@@ -1456,6 +1485,8 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
     song_end = (orig.duration_ms + audio_offset_ms) if orig is not None and orig.duration_ms else None
     events += info_events(project, style, W, H, k, family, audio_offset_ms, boxes=boxes, warnings=warnings,
                           end_ms=song_end)
+    if tagger.missing:
+        warnings.append(f"字幕样式里有 {len(tagger.missing)} 张图片在这台电脑上找不到（样式可能来自别处），已略过")
     # who each colour is: right after the title card
     events += legend_events(project, style, W, H, k, family, audio_offset_ms, boxes=boxes, warnings=warnings)
 

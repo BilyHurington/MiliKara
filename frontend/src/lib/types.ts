@@ -57,6 +57,8 @@ export interface KaraokeSinger {
   name: string;
   /** a short name beside the lines / in the legend ('' = the name) */
   label?: string;
+  /** an uploaded picture (GET /api/karaoke/pictures/{id}) beside the lines and in the legend; '' = none */
+  picture?: string;
   /** the key that assigns this singer on the 演唱者 page ('' = none; one of SINGER_KEYS) */
   key: string;
   color: string; color_unsung: string; color_sung: string; outline_color: string; glow_unsung: string; glow_sung: string;
@@ -83,6 +85,8 @@ export interface KaraokeSingers {
   legend?: boolean; legend_ms?: number;
   /** who sings each line, written at its start or end */
   labels?: 'off' | 'start' | 'end';
+  /** a singer with a picture is labelled by it, its name, or both */
+  label_content?: 'picture' | 'text' | 'both';
 }
 /** A saved set of singers (演唱者预设): names, colours, keys, combinations, how parts sung together look */
 export interface SingerPreset { id: string; name: string; updated: string | null; singers: KaraokeSingers }
@@ -290,8 +294,9 @@ export interface KaraokeStyle {
   singers?: KaraokeSingers;
   /** countdown dots before the first line / after a long pause (time based; a line can say otherwise) */
   countdown?: KaraokeCountdown;
-  /** text or symbols at the start / end of every line; '' colour = the lyrics' unsung colour */
-  decor?: { start: string; end: string; color: string; size_pct: number };
+  /** text or symbols (colour emoji in their own colours) and a picture at the start / end of every line;
+   *  '' colour = the lyrics' unsung colour */
+  decor?: { start: string; end: string; color: string; size_pct: number; start_picture?: string; end_picture?: string };
 }
 
 export interface KaraokeCountdown { intro: boolean; interlude: boolean; min_gap_ms: number; dots: number }

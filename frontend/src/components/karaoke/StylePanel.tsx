@@ -17,9 +17,10 @@ import { run, toast } from '@/store/app';
 import { deleteStyle, loadSavedStyles, sameLook, saveStyle, useLibrary } from '@/store/styles';
 import { arrowNav, Badge, Button, Input, Segmented, Select, SliderField, Switch, Textarea, Tip } from '@/components/ui';
 import { ColorRow, TEMPLATE_LABEL } from './ThemeColors';
+import { PictureField } from './PictureField';
 import { COUNTDOWN_DEFAULTS } from '@/lib/countdown';
 
-const DECOR_DEFAULTS: NonNullable<KaraokeStyle['decor']> = { start: '', end: '', color: '', size_pct: 80 };
+const DECOR_DEFAULTS: NonNullable<KaraokeStyle['decor']> = { start: '', end: '', color: '', size_pct: 80, start_picture: '', end_picture: '' };
 
 export type SectionId = 'colors' | 'text' | 'ruby' | 'translation' | 'info' | 'layout' | 'timing' | 'effects';
 const SECTION_IDS: SectionId[] = ['colors', 'text', 'ruby', 'translation', 'info', 'layout', 'timing', 'effects'];
@@ -265,20 +266,22 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
           <div className="space-y-3 rounded-xl border border-line p-3">
             <div className="text-[13px] font-medium">每句开头 / 结尾的符号</div>
             <div className="flex flex-wrap items-center gap-2">
+              <PictureField size="sm" label="每句开头的图片" value={D.start_picture ?? ''} onChange={(v) => setDecor((d) => { d.start_picture = v; })} />
               <Input className="h-8 w-24" value={D.start} maxLength={12} placeholder="开头，如 ♪" aria-label="每句开头的符号"
                 onChange={(e) => setDecor((d) => { d.start = e.target.value; })} />
               <span className="text-xs text-subtle">歌词</span>
               <Input className="h-8 w-24" value={D.end} maxLength={12} placeholder="结尾，如 ★" aria-label="每句结尾的符号"
                 onChange={(e) => setDecor((d) => { d.end = e.target.value; })} />
+              <PictureField size="sm" label="每句结尾的图片" value={D.end_picture ?? ''} onChange={(v) => setDecor((d) => { d.end_picture = v; })} />
             </div>
-            {(D.start.trim() || D.end.trim()) && (
+            {(D.start.trim() || D.end.trim() || D.start_picture || D.end_picture) && (
               <>
                 <Row label="大小"><Num name="符号大小" unit="%" value={D.size_pct} min={30} max={150} onChange={(v) => setDecor((d) => { d.size_pct = v; })} /></Row>
-                <ColorField label={D.color ? '颜色' : '颜色（同歌词未唱）'} value={D.color || T.color_unsung}
+                <ColorField label={D.color ? '文字颜色' : '文字颜色（同歌词未唱）'} value={D.color || T.color_unsung}
                   onChange={(v) => setDecor((d) => { d.color = v === T.color_unsung ? '' : v; })} />
               </>
             )}
-            <p className="text-xs text-subtle">文字或字体里的符号（★ ♪ ♡ → 等）。彩色 emoji 和图片暂不支持。演唱者标注在“演唱者”页面设置。</p>
+            <p className="text-xs text-subtle">可以写文字、符号（★ ♪ ♡ 用上面的颜色）和彩色 emoji（🎤 🌸，保持原色），两边还可以各放一张图片（在文字外侧）。演唱者标注和头像在“演唱者”页面设置。</p>
           </div>
           <div className="space-y-4 rounded-xl border border-line p-3">
             <Switch checked={G.enabled} onChange={(v) => patch((s) => { s.glow.enabled = v; })} label={<span className="font-medium">荧光边缘</span>} />

@@ -46,6 +46,7 @@ function server() {
       return structuredClone(pv);
     },
     'POST /api/karaoke/singer-colors': () => [],
+    'POST /api/karaoke/pictures': () => ({ id: '0123456789abcdef', width: 40, height: 40 }),
     'GET /api/karaoke/singer-presets': () => [],
     [`POST /api/projects/${PID}/karaoke/preview`]: () => new Response(new Blob(['png']), { status: 200 }),
   });
@@ -207,6 +208,23 @@ describe('singers page', () => {
     expect(sent.labels).toBe('start');
     expect(sent.legend).toBe(false);
     expect(screen.getByText(/两人一起唱分上下两小行/)).toBeInTheDocument();
+  });
+
+  it('a picture of a singer: uploaded in the details, labels by picture, name or both', async () => {
+    seedStore('singers');
+    const { api: routes } = server();
+    renderUI(<SingersPage />);
+    await screen.findByDisplayValue('Ann');
+    fireEvent.click(screen.getByRole('button', { name: 'Ann的详细颜色' }));
+    const file = new File([new Uint8Array([137, 80, 78, 71])], 'a.png', { type: 'image/png' });
+    const input = document.querySelector('input[type=file]')!;
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole('button', { name: '更换Ann的头像' })).toBeInTheDocument());
+    await act(() => flushSingers());
+    expect(routes.find('PUT', '/karaoke/singers').at(-1)!.body.members[0].picture).toBe('0123456789abcdef');
+    fireEvent.click(screen.getByRole('radio', { name: '只用头像' }));
+    await act(() => flushSingers());
+    expect(routes.find('PUT', '/karaoke/singers').at(-1)!.body.label_content).toBe('picture');
   });
 
   it('a saved set of singers is saved and loaded', async () => {

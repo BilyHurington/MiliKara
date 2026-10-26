@@ -167,6 +167,27 @@ def frame_size(video: Path, fallback: tuple[int, int]) -> tuple[int, int]:
         return fallback
 
 
+def _ass_seconds(t: str) -> float:
+    h, m, sec = t.split(":")
+    return int(h) * 3600 + int(m) * 60 + float(sec)
+
+
+def _shown_at(ass_text: str, t: float) -> str:
+    """The subtitles with only the events shown at ``t`` (pictures make a song's subtitles megabytes long:
+    libass need not read them all for one frame)."""
+    out = []
+    for line in ass_text.splitlines():
+        if line.startswith("Dialogue:"):
+            try:
+                _, start, end, _ = line.split(",", 3)
+                if not (_ass_seconds(start) - 0.02 <= t <= _ass_seconds(end) + 0.02):
+                    continue
+            except ValueError:
+                pass
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
 def preview_png(ass_text: str, t_ms: int, size: tuple[int, int], video: Optional[Path] = None,
                 audio_offset_s: float = 0.0, background: Optional[tuple[Path, str, Optional[int]]] = None) -> bytes:
     """One frame at audio time ``t_ms``: the video frame there, the background's (path, kind,
@@ -174,7 +195,7 @@ def preview_png(ass_text: str, t_ms: int, size: tuple[int, int], video: Optional
     w, h = size
     t = max(0.0, t_ms / 1000.0)
     with tempfile.TemporaryDirectory() as td:
-        Path(td, "k.ass").write_text(ass_text, encoding="utf-8")
+        Path(td, "k.ass").write_text(_shown_at(ass_text, t), encoding="utf-8")
         out = Path(td, "p.png")
         # the frame gets pts = t so the subtitles filter draws the state at t
         # millisecond timebase first: a 1 fps source would round t to whole seconds

@@ -137,7 +137,7 @@ def info_events(project: Project, style: KaraokeStyle, W: int, H: int, k: float,
         return []
     # a title / album with characters the lyric font lacks: a font with all of them (Windows: libass would
     # fill them in from a font of its own, at another size)
-    family = covering(family, style.text.bold, "".join(lines), [BUNDLED_JP, *HAN_FAMILIES])
+    family = covering(family, style.text.bold, _text_of("".join(lines)), [BUNDLED_JP, *HAN_FAMILIES])
     t0 = max(0.0, info.start_ms + time_offset_ms)
     t1 = t0 + info.duration_ms
     events = _card(lines, style, W, H, k, family, t0, t1, boxes, warnings, at_end=False)
@@ -147,9 +147,19 @@ def info_events(project: Project, style: KaraokeStyle, W: int, H: int, k: float,
     return events
 
 
-def legend_entries(project: Project, style: KaraokeStyle) -> list[tuple[str, list[str], str]]:
-    """(text, colours, mix) of each row of the legend: every singer who sings in the song (by number),
-    then the combinations heard that have a label of their own; nothing for fewer than two singers."""
+def _text_of(text: str) -> str:
+    """``text`` without its colour emoji (drawn as pictures, not by a font)."""
+    from .pictures import emoji_font, split_emoji
+
+    return "".join(t for t, e in split_emoji(text) if not e) if emoji_font() is not None else text
+
+
+def legend_entries(project: Project, style: KaraokeStyle) -> list[tuple[str, list[str], str, str]]:
+    """(text, colours, mix, picture) of each row of the legend: every singer who sings in the song (by
+    number, with its picture if it has one here), then the combinations heard that have a label of their
+    own; nothing for fewer than two singers."""
+    from .pictures import picture_path
+
     from ..lyrics.singers import effective
     from .linetags import combo_label
 
@@ -170,13 +180,14 @@ def legend_entries(project: Project, style: KaraokeStyle) -> list[tuple[str, lis
         m = sg.members[i - 1]
         name = m.name.strip() or f"演唱者 {i}"
         label = m.label.strip()
-        rows.append((f"{name}（{label}）" if label and label != name else name, [m.color], "split"))
+        rows.append((f"{name}（{label}）" if label and label != name else name, [m.color], "split",
+                     m.picture if picture_path(m.picture) is not None else ""))
     seen: set[str] = set()
     for ids in used:
         label = combo_label(sg, ids) if len(ids) >= 2 else ""
         if label and label not in seen:
             seen.add(label)
-            rows.append((label, [sg.members[i - 1].color for i in ids], sg.look(ids)[0]))
+            rows.append((label, [sg.members[i - 1].color for i in ids], sg.look(ids)[0], ""))
     return rows
 
 
@@ -190,17 +201,19 @@ def legend_events(project: Project, style: KaraokeStyle, W: int, H: int, k: floa
         return []
     info = style.info
     # names: in one font that has all their characters (not filled in from another, in another style)
-    family = covering(family, style.text.bold, "".join(r[0] for r in rows), [BUNDLED_JP, *HAN_FAMILIES], whole=True)
+    family = covering(family, style.text.bold, _text_of("".join(r[0] for r in rows)), [BUNDLED_JP, *HAN_FAMILIES],
+                      whole=True)
     t0 = max(0.0, info.start_ms + time_offset_ms)
     if info.enabled and info_lines(project, style):
         t0 += info.duration_ms
     return _card([r[0] for r in rows], style, W, H, k, family, t0, t0 + style.singers.legend_ms, boxes, warnings,
-                 at_end=False, swatches=[(r[1], r[2]) for r in rows], what="分色列表")
+                 at_end=False, swatches=[(r[1], r[2]) for r in rows], pictures=[r[3] for r in rows], what="分色列表")
 
 
 def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, family: str, t0: float, t1: float,
           boxes: Sequence[tuple[float, float, float, float, float, float]], warnings: Optional[list[str]], *,
-          at_end: bool, swatches: Optional[list[tuple[list[str], str]]] = None, what: str = "歌曲信息") -> list[str]:
+          at_end: bool, swatches: Optional[list[tuple[list[str], str]]] = None, pictures: Optional[list[str]] = None,
+          what: str = "歌曲信息") -> list[str]:
     """One showing of the card from t0 to t1, in its corner at the top, as narrow as it needs to be
     to stay clear of what else is drawn there (its lines wrap).  Only when not even a narrow card
     fits beside it: shorter (gone before that shows / in after it has gone), else moved down below
@@ -216,6 +229,12 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
         title_size = sub_size = max(18 * k, info.size * k * 0.66)
         bar_w = sub_size * 0.72
     gap = 14 * k
+    # singers' pictures: a column between the swatches and the names (all names start at one x)
+    from .pictures import aspect, drawing, emoji_font, split_emoji
+
+    pic_h = sub_size * 0.95
+    with_pics = [p for p in (pictures or []) if p]
+    col = (pic_h * max(aspect(f"pic:{p}") for p in with_pics) + gap * 0.6) if with_pics else 0.0
     max_w = W * 0.42
     color = _bgr(info.color or txt.color_unsung)
     accent = _bgr(info.accent or txt.color_sung)
@@ -242,7 +261,7 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
                     y += prev_size * (1.1 if j else (1.18 if prev_level == 0 else 1.32))
                 placed.append((row, size, bold, m.width(row), y, 0 if (i == 0 or swatches is not None) else 1, i, j == 0))
                 bottom = y + size
-        reach = bar_w + gap + min(width, max(r[3] for r in placed)) + slide_room
+        reach = bar_w + gap + col + min(width, max(r[3] for r in placed)) + slide_room
         return placed, bottom, reach  # (the accent bar is as tall as the text)
 
     def region(right: bool, top: float, block_h: float, reach: float) -> tuple[float, float, float, float]:
@@ -270,7 +289,7 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
             break
         # the room between the corner and the nearest thing in the way
         room = (W - margin - max(bx[4] for bx in hits) if right else min(bx[2] for bx in hits) - margin) \
-            - 2 * pad - bar_w - gap - slide_room
+            - 2 * pad - bar_w - gap - col - slide_room
         if room < min_w or room >= width - 1:
             placed = None
             break
@@ -329,7 +348,7 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
         top, n0, n1 = got
     t0, t1 = n0, n1
     slide = 28 * k * (1 if right else -1)
-    x_text = (W - margin - bar_w - gap) if right else (margin + bar_w + gap)
+    x_text = (W - margin - bar_w - gap - col) if right else (margin + bar_w + gap + col)
     an = 9 if right else 7
 
     # coming in: the bar grows down, then the lines slide in from the edge one after another;
@@ -342,8 +361,7 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
         a = t0 + _STAGGER * i  # lines come in one after another
         out_end = t1 - 200 - _STAGGER * i  # and leave in the opposite order, before the bar
         out_start = max(out_end - _OUT_MS, a + _IN_MS)
-        font = f"\\an{an}\\fn{family}\\fs{size:.1f}\\b{int(bold)}{sx}"
-        body = _escape(text)
+        font = f"\\fn{family}\\fs{size:.1f}\\b{int(bold)}"
         looks = []
         if glow.enabled:
             looks.append((L_INFO_GLOW, f"\\1a&HFF&\\3c{_bgr(glow.color_unsung)}"
@@ -354,16 +372,53 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
         looks.append((L_INFO, f"\\1c{color}{sub_alpha}\\3c{outline_c}"
                               f"\\bord{txt.outline * k * (0.7 if level == 0 else 0.55):.2f}"
                               f"\\shad{txt.shadow * k * 0.6:.2f}"))
-        move_in = f"\\move({x_text + slide:.1f},{y:.1f},{x_text:.1f},{y:.1f},0,{_IN_MS})"
-        for layer, look in looks:
+
+        def slid(layer: int, x: float, yy: float, head: str, look: str, body: str) -> None:
+            """One piece of the row: slides in to (x, yy) and back out."""
+            move_in = f"\\move({x + slide:.1f},{yy:.1f},{x:.1f},{yy:.1f},0,{_IN_MS})"
             if out_end - out_start >= 150:
-                events.append(_dialogue(layer, a, out_start, f"{font}{move_in}\\fad(350,0){look}", body))
-                move_out = f"\\move({x_text:.1f},{y:.1f},{x_text + slide:.1f},{y:.1f},0,{out_end - out_start:.0f})"
+                events.append(_dialogue(layer, a, out_start, f"{head}{move_in}\\fad(350,0){look}", body))
+                move_out = f"\\move({x:.1f},{yy:.1f},{x + slide:.1f},{yy:.1f},0,{out_end - out_start:.0f})"
                 events.append(_dialogue(layer, out_start, out_end,
-                                        f"{font}{move_out}\\fad(0,{out_end - out_start:.0f}){look}", body))
+                                        f"{head}{move_out}\\fad(0,{out_end - out_start:.0f}){look}", body))
             else:  # too short a card for both: in, then a plain fade
-                events.append(_dialogue(layer, a, t1, f"{font}{move_in}\\fad(350,300){look}", body))
+                events.append(_dialogue(layer, a, t1, f"{head}{move_in}\\fad(350,300){look}", body))
+
+        runs = split_emoji(text) if emoji_font() is not None else [(text, False)]
+        if not any(e for _, e in runs):
+            for layer, look in looks:
+                slid(layer, x_text, y, f"\\an{an}{font}{sx}", look, _escape(text))
+            continue
+        # colour emoji in the row: each run where it falls, the emoji as pictures as tall as the text's em
+        m = Measurer(family, bold, size)
+        i0, i1 = m.ink
+        eh = max(1, round(size * (i1 - i0)))
+        egap = eh * 0.08
+        widths = [eh + 2 * egap if e else m.width(t) for t, e in runs]
+        x = x_text - (sum(widths) if right else 0.0)
+        for (t, e), w in zip(runs, widths):
+            if e:
+                px, py = round(x + egap), round(y + size * (i0 + i1) / 2 - eh / 2)
+                for tags, path in drawing(f"emoji:{t}", eh, eh):
+                    slid(L_INFO, px, py, "\\an7", f"\\bord0\\shad0\\blur0{tags}\\p1", path)
+            else:
+                for layer, look in looks:
+                    slid(layer, x, y, f"\\an7{font}", look, _escape(t))
+            x += w
     bar_x = (W - margin - bar_w) if right else margin
+    if pictures and col:
+        # the singers' pictures, between the swatches and the names, in and out with their rows
+        for i, (_, size, _, _, y, _, line, first) in enumerate(placed):
+            pid = pictures[line] if line < len(pictures) else ""
+            if not (first and pid):
+                continue
+            w = pic_h * aspect(f"pic:{pid}")
+            px = (bar_x - gap * 0.6 - w) if right else (bar_x + bar_w + gap * 0.6)
+            py = top + y + (size - pic_h) / 2
+            a, end = t0 + _STAGGER * i, t1 - 200 - _STAGGER * i
+            for tags, path in drawing(f"pic:{pid}", max(1, round(w)), max(1, round(pic_h))):
+                events.append(_dialogue(L_INFO, a, end, f"\\an7\\pos({round(px)},{round(py)})\\bord0\\shad0\\blur0"
+                                                        f"{tags}\\fad(350,300)\\p1", path))
     if swatches is not None:
         # beside the first row of each name: a square of its colours (a combination's side by side, blended
         # when it blends), framed in the lyrics' outline; in and out with its row

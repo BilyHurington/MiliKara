@@ -650,6 +650,7 @@ class BackgroundAsset(_Base):
 
 COLOR_RE = r"^#[0-9A-Fa-f]{6}$"
 COLOR_OR_EMPTY_RE = r"^(#[0-9A-Fa-f]{6})?$"
+PICTURE_ID_RE = r"^([0-9a-f]{16})?$"  # an uploaded picture (karaoke.pictures) or ""
 _FONT_MAX = 200
 _DROP = object()  # _lenient_value(): use the field's default
 
@@ -921,6 +922,8 @@ class KaraokeSinger(_KaraokeBase):
     name: str = Field(default="", max_length=40)
     # shown beside the lines this singer sings (KaraokeSingers.labels) and in the legend; "" = the name
     label: str = Field(default="", max_length=12)
+    # a picture of the singer (an uploaded image, karaoke.pictures): beside the lines and in the legend
+    picture: str = Field(default="", pattern=PICTURE_ID_RE)
     # the key that assigns this singer on the 演唱者 page ("" = none)
     key: str = Field(default="", max_length=1)
     color: str = _color("#ED35B3")
@@ -979,6 +982,8 @@ class KaraokeSingers(_KaraokeBase):
     # who sings each line, written beside it in their colours: "start" / "end" of the line, or "off";
     # several singers in two small rows as tall as the lyric (a combination's own label in one)
     labels: Literal["off", "start", "end"] = "off"
+    # a singer with a picture is labelled by it, its name, or both
+    label_content: Literal["picture", "text", "both"] = "both"
 
     @model_validator(mode="before")
     @classmethod
@@ -1064,11 +1069,13 @@ class KaraokeTheme(_KaraokeBase):
 
 
 class KaraokeDecor(_KaraokeBase):
-    """Text or symbols at the start / end of every lyric line (★ ♪ ♡ …), in one colour.  Drawn by the
-    subtitle renderer: characters of a font (colour emoji and pictures are not supported there)."""
+    """Text or symbols at the start / end of every lyric line (★ ♪ ♡ …, in one colour; colour emoji in
+    their own colours) and a picture at each end (an uploaded image, karaoke.pictures)."""
 
     start: str = Field(default="", max_length=12)
     end: str = Field(default="", max_length=12)
+    start_picture: str = Field(default="", pattern=PICTURE_ID_RE)
+    end_picture: str = Field(default="", pattern=PICTURE_ID_RE)
     color: str = _color("", follow=True)  # "" = the lyrics' unsung colour
     size_pct: int = Field(default=80, ge=30, le=150)  # of the lyric size
 

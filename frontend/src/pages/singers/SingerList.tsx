@@ -13,6 +13,7 @@ import { run, toast } from '@/store/app';
 import { deleteSingerPreset, loadSingerPresets, saveSingerPreset } from '@/store/singers';
 import { Button, Card, CardBody, CardHeader, ConfirmButton, Input, NumberInput, Segmented, Select, Switch, Tip } from '@/components/ui';
 import { ColorField } from '@/components/karaoke/StylePanel';
+import { PictureField, pictureUrl } from '@/components/karaoke/PictureField';
 
 type Detail = 'color_unsung' | 'color_sung' | 'outline_color' | 'glow_unsung' | 'glow_sung';
 const DETAILS: [Detail, keyof SingerColors, string][] = [
@@ -84,6 +85,7 @@ export function SingerList({ singers, onChange, onRemove, onUsePreset, usage, gl
                   <input type="color" aria-label={`${singerLabel(members, i + 1)}的颜色`} value={m.color}
                     onChange={(e) => edit(i, { color: e.target.value.toUpperCase() })} className="absolute inset-0 cursor-pointer opacity-0" />
                 </label>
+                {m.picture && <img src={pictureUrl(m.picture)} alt="" className="size-7 shrink-0 rounded-md object-contain" />}
                 <Input className="h-8 min-w-0 flex-1" value={m.name} maxLength={40} placeholder={`演唱者 ${i + 1}`}
                   aria-label={`演唱者 ${i + 1} 的名字`} onChange={(e) => edit(i, { name: e.target.value })} />
                 <Tip content="简称：写在每句旁边（如 A、春香），分色列表里写在名字后面；不填就用名字">
@@ -99,6 +101,10 @@ export function SingerList({ singers, onChange, onRemove, onUsePreset, usage, gl
               </div>
               {open === i && (
                 <div className="mt-3 space-y-2 border-t border-line pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px]">头像<span className="ml-1.5 text-xs text-subtle">标注和分色列表里显示</span></span>
+                    <PictureField label={`${singerLabel(members, i + 1)}的头像`} value={m.picture ?? ''} onChange={(v) => edit(i, { picture: v })} />
+                  </div>
                   {DETAILS.filter(([f]) => glow || !f.startsWith('glow')).map(([field, role, label]) => (
                     <ColorField key={field} label={`${label}${m[field] ? '' : '（自动）'}`} value={m[field] || resolved[i]?.[role] || m.color}
                       onChange={(v) => edit(i, { [field]: v } as Partial<KaraokeSinger>)} />
@@ -214,9 +220,17 @@ function LegendAndLabels({ singers, onChange }: { singers: KaraokeSingers; onCha
         <Segmented size="sm" label="每句标注演唱者" value={labels} onChange={(v) => onChange({ ...singers, labels: v })}
           options={[{ value: 'off', label: '不显示' }, { value: 'start', label: '句首' }, { value: 'end', label: '句尾' }]} />
       </div>
+      {singers.members.some((m) => m.picture) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted">有头像的演唱者</span>
+          <Segmented size="sm" label="有头像的演唱者标注" value={singers.label_content ?? 'both'}
+            onChange={(v) => onChange({ ...singers, label_content: v })}
+            options={[{ value: 'both', label: '头像和名字' }, { value: 'picture', label: '只用头像' }, { value: 'text', label: '只用名字' }]} />
+        </div>
+      )}
       {labels !== 'off' && (
         <p className="text-xs text-subtle">
-          写简称（没有就写名字），用各自的颜色。两人一起唱分上下两小行，和歌词一样高；三人以上平均分到两行；有名字的组合只写组合名。
+          写简称（没有就写名字），用各自的颜色；简称里可以有彩色 emoji。两人一起唱分上下两小行，和歌词一样高；三人以上平均分到两行；有名字的组合只写组合名。头像在每人的详细设置里上传。
         </p>
       )}
     </div>
