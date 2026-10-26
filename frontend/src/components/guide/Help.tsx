@@ -3,7 +3,7 @@
 
 import * as Popover from '@radix-ui/react-popover';
 import { CircleHelp, ExternalLink, Lightbulb, X } from 'lucide-react';
-import { useSyncExternalStore, type ReactNode } from 'react';
+import { useSyncExternalStore } from 'react';
 import { cn } from '@/lib/format';
 import { HELP, TIPS, TUTORIAL, type HelpKey, type TipKey } from '@/lib/guide';
 
@@ -26,12 +26,10 @@ export function HelpButton({ k, className }: { k: HelpKey; className?: string })
               <li key={p} className="flex gap-2"><span className="mt-2 size-1 shrink-0 rounded-full bg-accent" aria-hidden />{p}</li>
             ))}
           </ul>
-          {h.doc && (
-            <a href={`${TUTORIAL}${h.doc}`} target="_blank" rel="noreferrer"
-              className="focus-ring mt-3 inline-flex items-center gap-1 rounded text-xs font-medium text-accent hover:underline">
-              查看教程里的完整说明<ExternalLink className="size-3" />
-            </a>
-          )}
+          <a href={`${TUTORIAL}${h.doc}`} target="_blank" rel="noreferrer"
+            className="focus-ring mt-3 inline-flex items-center gap-1 rounded text-xs font-medium text-accent hover:underline">
+            查看教程里的完整说明（GitHub）<ExternalLink className="size-3" />
+          </a>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -78,7 +76,7 @@ export function resetTips() {
 }
 
 /** A tip shown until it is dismissed. */
-export function FirstTip({ k, className, children }: { k: TipKey; className?: string; children?: ReactNode }) {
+export function FirstTip({ k, className }: { k: TipKey; className?: string }) {
   const gone = useDismissed(k);
   if (gone) return null;
   const t = TIPS[k];
@@ -88,7 +86,6 @@ export function FirstTip({ k, className, children }: { k: TipKey; className?: st
       <div className="min-w-0 flex-1">
         <div className="font-semibold">{t.title}</div>
         <p className="mt-0.5 text-fg/80">{t.body}</p>
-        {children}
       </div>
       <button type="button" onClick={() => dismiss(k)} aria-label={`知道了，不再显示“${t.title}”`}
         className="focus-ring -mt-1 -mr-2 flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted hover:bg-surface hover:text-fg">

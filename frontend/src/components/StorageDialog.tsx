@@ -76,8 +76,8 @@ export function StorageDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const total = info ? info.projects_size + info.cache.size + info.leftovers.size : 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} wide title={<span className="flex items-center gap-1">存储空间<HelpButton k="storage" /></span>}
-      description={info ? <>项目保存在 <code className="font-mono text-xs break-all">{info.root}</code></> : undefined}>
+    <Dialog open={open} onOpenChange={onOpenChange} wide title="存储空间"
+      description={<span className="flex items-center gap-1">{info ? <span>项目保存在 <code className="font-mono text-xs break-all">{info.root}</code></span> : null}<HelpButton k="storage" /></span>}>
       {!info ? (
         <div className="grid place-items-center py-10"><Spinner /></div>
       ) : (

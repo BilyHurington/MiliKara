@@ -62,7 +62,7 @@ export function HomePage() {
           <div className="mt-6 flex flex-wrap gap-6 text-[13px] text-muted">
             <span className="flex items-center gap-2"><ListMusic className="size-4 text-accent" />逐单元时间</span>
             <span className="flex items-center gap-2"><Timer className="size-4 text-accent" />LRC 锚点约束</span>
-            <span className="flex items-center gap-2"><FileMusic className="size-4 text-accent" />人声保留混音</span>
+            <span className="flex items-center gap-2"><FileMusic className="size-4 text-accent" />降低人声的混音</span>
           </div>
         </div>
       </section>

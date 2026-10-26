@@ -34,11 +34,11 @@ function PlainModeNotice() {
   });
   return (
     <>
-      <PageHeader eyebrow="第 4 步" title="首音校准" description="普通模式不需要这一步，直接去对齐即可；只有 LRC 增强模式要先确认歌词时间和音频的整体偏移。" />
+      <PageHeader eyebrow="第 4 步" title="首音校准" />
       <EmptyState
         icon={<Timer className="size-5" />}
         title="普通模式不需要校准"
-        description="普通模式不使用任何外部时间锚点，直接对整段已知歌词做有序对齐。"
+        description="普通模式只靠声音对齐，不使用歌词里的时间，可以直接去对齐。"
         action={
           <div className="flex flex-wrap justify-center gap-2">
             <Button onClick={switchMode}>切换到 LRC 增强模式</Button>
@@ -364,6 +364,7 @@ function ChecksCard({ line, lineNo }: { line: Line | null; lineNo: Map<string, n
       <CardHeader
         icon={<MapPin className="size-4" />}
         title="中段 / 末段检查"
+        help={<HelpButton k="calibrate.check" />}
         description="单点只能确定整体平移。在中段、末段句子的首个发音处添加检查点，核对整曲是否一致。"
         actions={<Button size="sm" onClick={addCheck} disabled={!line || (line.imported_start_ms === null && !line.anchor)} disabledReason="所选行没有歌词时间">以播放头为所选行添加检查点</Button>}
       />

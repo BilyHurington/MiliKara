@@ -143,7 +143,7 @@ export function CardHeader({ title, description, icon, actions, help, className 
     <div className={cn('flex items-start gap-3 border-b border-line px-5 py-4', className)}>
       {icon && <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">{icon}</div>}
       <div className="min-w-0 flex-1">
-        <h3 className="flex items-center gap-1 text-[15px] font-semibold leading-6">{title}{help}</h3>
+        <div className="flex items-center gap-1"><h3 className="text-[15px] font-semibold leading-6">{title}</h3>{help}</div>
         {description && <p className="mt-0.5 text-[13px] leading-5 text-muted">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
@@ -166,7 +166,7 @@ export function PageHeader({ eyebrow, title, description, actions, help }: {
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         {eyebrow && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-accent">{eyebrow}</div>}
-        <h1 className="flex items-center gap-1.5 text-2xl font-semibold tracking-tight">{title}{help}</h1>
+        <div className="flex items-center gap-1.5"><h1 className="text-2xl font-semibold tracking-tight">{title}</h1>{help}</div>
         {description && <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -511,12 +511,15 @@ export function MultiToggle<T extends string>({ value, onChange, options, size =
 
 // ------------------------------------------------------------------ Tabs
 
-export function Tabs({ value, onChange, tabs, className }: {
+export function Tabs({ value, onChange, tabs, className, extra }: {
   value: string; onChange: (v: string) => void; tabs: { value: string; label: ReactNode; content: ReactNode }[]; className?: string;
+  /** beside the tabs, at the end of their row (e.g. a "?") */
+  extra?: ReactNode;
 }) {
   return (
     <RTabs.Root value={value} onValueChange={onChange} className={className}>
-      <RTabs.List className="flex gap-1 border-b border-line">
+      <div className="flex items-center gap-2 border-b border-line">
+      <RTabs.List className="flex min-w-0 flex-1 gap-1">
         {tabs.map((t) => (
           <RTabs.Trigger
             key={t.value}
@@ -527,6 +530,8 @@ export function Tabs({ value, onChange, tabs, className }: {
           </RTabs.Trigger>
         ))}
       </RTabs.List>
+      {extra}
+      </div>
       {tabs.map((t) => (
         <RTabs.Content key={t.value} value={t.value} className="pt-4 outline-none">
           {t.content}

@@ -3,12 +3,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { act, fireEvent, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HELP, STEP_GUIDE, TUTORIAL } from '@/lib/guide';
 import { STEPS, useApp } from '@/store/app';
 import { renderUI } from '@/test/helpers';
 import { FirstTip, HelpButton, resetTips } from './Help';
-import { setShortcutsOpen, ShortcutsDialog } from './Shortcuts';
+import { isShortcutsKey, setShortcutsOpen, ShortcutsDialog } from './Shortcuts';
 import { StepsHelp, StepsOverviewCard } from './StepsOverview';
 
 beforeEach(() => {
@@ -55,8 +55,24 @@ describe('guide', () => {
     fireEvent.click(screen.getByRole('button', { name: '知道了' }));
     expect(screen.queryByText('第一次用详细模式？')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '每一步做什么' }));
-    fireEvent.click(screen.getByRole('button', { name: /演唱者可选/ }));
+    fireEvent.click(screen.getByRole('button', { name: /演唱者多人演唱时/ }));
     expect(useApp.getState().step).toBe('singers');
+    expect(screen.queryByRole('dialog', { name: '每一步做什么' })).toBeNull();  // closed once a step is picked
+  });
+
+  it('a dismissed tip stays dismissed after the page is loaded again', async () => {
+    localStorage.setItem('kara.guide.dismissed', JSON.stringify(['simple.welcome']));
+    vi.resetModules();
+    const fresh = await import('./Help');
+    renderUI(<><fresh.FirstTip k="simple.welcome" /><fresh.FirstTip k="review.first" /></>);
+    expect(screen.queryByRole('note', { name: '第一次使用？' })).toBeNull();
+    expect(screen.getByRole('note', { name: '怎么检查' })).toBeInTheDocument();
+  });
+
+  it('"?" opens the sheet; not with a modifier', () => {
+    expect(isShortcutsKey(new KeyboardEvent('keydown', { key: '?', shiftKey: true }))).toBe(true);
+    expect(isShortcutsKey(new KeyboardEvent('keydown', { key: '?', ctrlKey: true }))).toBe(false);
+    expect(isShortcutsKey(new KeyboardEvent('keydown', { key: '/', shiftKey: true, code: 'Slash' }))).toBe(false);
   });
 
   it('the shortcuts sheet shows the keys of the page with the common ones', () => {

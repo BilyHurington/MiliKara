@@ -237,6 +237,7 @@ export function ReviewPage() {
               <Tabs
                 value={tab}
                 onChange={setTab}
+                extra={<HelpButton k="review.detail" />}
                 tabs={[
                   {
                     value: 'units',

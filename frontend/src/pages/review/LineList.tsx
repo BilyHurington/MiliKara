@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react';
 import { cn, fmtMs } from '@/lib/format';
 import { Badge, Segmented } from '@/components/ui';
 import type { LineStats } from './helpers';
+import { HelpButton } from '@/components/guide/Help';
 
 export type LineFilter = 'all' | 'issues' | 'manual';
 
@@ -49,6 +50,7 @@ export function LineList({ stats, selected, onSelect, checked, onToggleCheck, fi
             { value: 'manual', label: `人工 ${nManual}` },
           ]}
         />
+        <HelpButton k="review.list" />
       </div>
       <div ref={listRef} className="max-h-[560px] min-h-0 flex-1 overflow-y-auto p-1.5">
         {shown.length === 0 && <div className="px-3 py-8 text-center text-xs text-muted">没有符合条件的行</div>}

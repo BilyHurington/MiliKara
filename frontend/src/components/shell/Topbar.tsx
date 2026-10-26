@@ -30,7 +30,7 @@ export function Topbar() {
             <span className="hidden text-subtle md:inline">/</span>
             <span className="hidden text-muted md:inline">{stepLabel}</span>
             <Badge tone={pv.project.mode === 'lrc' ? 'accent' : 'neutral'} className="ml-1 hidden sm:inline-flex">{pv.project.mode === 'lrc' ? 'LRC 增强' : '普通模式'}</Badge>
-            {staleCount > 0 && <Badge className="hidden lg:inline-flex" tone="warn" dot title="改过歌词、读音或校准：这些结果仍可查看，但不再对应现在的输入。到“对齐”重新对齐即可（人工改过的时间会保留）">{staleCount} 个结果已过期</Badge>}
+            {staleCount > 0 && <Badge className="hidden lg:inline-flex" tone="warn" dot title="改过歌词、读音、校准、模式或换了原曲：这些结果仍可查看，但不再对应现在的输入。到“对齐”重新对齐即可（人工改过的时间会保留）">{staleCount} 个结果已过期</Badge>}
           </>
         ) : (
           <span className="font-medium">项目</span>
@@ -73,10 +73,11 @@ export function Topbar() {
 
 function JobsIndicator() {
   const jobs = Object.values(useApp((s) => s.jobs));
+  const inProject = useApp((s) => !!s.pv);
   const active = jobs.filter((j) => j.status === 'queued' || j.status === 'running');
   if (!jobs.length) {
     return (
-      <Tip content={<span>没有进行中的操作（对齐、分离、生成视频等会显示在这里）。快捷键见旁边的键盘按钮，或按 <Kbd>?</Kbd></span>}>
+      <Tip content={<span>没有进行中的操作（对齐、分离、生成视频等会显示在这里）。{inProject && <>快捷键见旁边的键盘按钮，或按 <Kbd>?</Kbd></>}</span>}>
         <span tabIndex={0} className="focus-ring hidden items-center gap-1.5 rounded px-2 text-xs text-subtle lg:flex"><Activity className="size-3.5" />空闲</span>
       </Tip>
     );

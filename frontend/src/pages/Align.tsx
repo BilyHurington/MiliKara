@@ -137,7 +137,7 @@ function RunCard() {
 
   return (
     <Card>
-      <CardHeader icon={<Settings2 className="size-4" />} title="对齐设置" help={<HelpButton k="align.settings" />} description="设置随项目保存，一般不用改。" />
+      <CardHeader icon={<Settings2 className="size-4" />} title="对齐设置" help={<HelpButton k="align.settings" />} description="设置随项目保存。" />
       <CardBody className="space-y-5">
         <div className="grid gap-5 md:grid-cols-2">
           <Field group label="对齐输入音频" hint={hasVocals ? '人声使用未衰减的分离人声；分离不保证更准，异常句可切回原曲比较'
@@ -232,7 +232,7 @@ function RunCard() {
               <Switch
                 checked={cfg.retry.enabled}
                 onChange={(v) => patchConfig({ retry: { enabled: v } })}
-                label={<span>异常句有限重试 <span className="text-muted">（放宽容差、联合邻句、切换音轨、已确认的读音候选；限制候选预算）</span></span>}
+                label={<span>异常句有限重试 <span className="text-muted">（对不好的行自动换几种方法再试一次，比如放宽范围、和相邻句一起对齐、换用原曲或人声）</span></span>}
               />
             </div>
           )}

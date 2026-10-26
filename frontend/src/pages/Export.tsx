@@ -277,8 +277,8 @@ function MixCard() {
 
   return (
     <Card>
-      <CardHeader icon={<Music2 className="size-4" />} title={hasVideo ? '人声保留混音（WAV / 视频）' : '人声保留混音 WAV'} help={<HelpButton k="export.mix" />}
-        description="正常速度、原始时长与原点；“试听此混音”与导出使用同一规则，监听音量不写入导出。" />
+      <CardHeader icon={<Music2 className="size-4" />} title={hasVideo ? '降低人声的混音（WAV / 视频）' : '降低人声的混音 WAV'} help={<HelpButton k="export.mix" />}
+        description="“试听此混音”听到的就是导出的效果；播放器的音量只影响试听。" />
       <CardBody className="space-y-5">
         {!canMix ? (
           <EmptyState
@@ -301,7 +301,7 @@ function MixCard() {
             <Field group label="防削波">
               <div className="flex flex-wrap items-center gap-3">
                 <Segmented value={limiter} onChange={setLimiter} label="防削波"
-                  options={[{ value: 'normalize_peak', label: '共同母线峰值归一' }, { value: 'none', label: '不处理' }]} />
+                  options={[{ value: 'normalize_peak', label: '整体降低音量，避免破音' }, { value: 'none', label: '不处理' }]} />
                 {gain && (
                   <Tip content="对整段混音统一施加，保持两轨相对比例">
                     <span tabIndex={0} className="tabular rounded text-xs text-muted">母线增益 ×{gain.bus_gain.toFixed(3)} · 峰值 {gain.peak_before.toFixed(3)}</span>
@@ -352,7 +352,7 @@ function StemsCard() {
   const assets = project.audio.filter((a) => a.role !== 'mix');
   return (
     <Card>
-      <CardHeader icon={<Archive className="size-4" />} title="音轨" help={<HelpButton k="export.tracks" />} description="解码后的 PCM WAV（与对齐使用同一解码器，时间原点一致）" />
+      <CardHeader icon={<Archive className="size-4" />} title="音轨" help={<HelpButton k="export.tracks" />} description="WAV 格式，时间起点和对齐结果一致" />
       <div className="p-2">
         {assets.length === 0 ? (
           <p className="px-3 py-3 text-[13px] text-muted">还没有音频。</p>
@@ -378,7 +378,7 @@ function StemsCard() {
 function PackageCard() {
   return (
     <Card>
-      <CardHeader icon={<Package className="size-4" />} title="项目" help={<HelpButton k="export.project" />} description="歌词、校准、AI 往返、人工修改与结果都在项目文件中；不含模型权重或本机路径。" />
+      <CardHeader icon={<Package className="size-4" />} title="项目" help={<HelpButton k="export.project" />} description="歌词、读音、校准、人工修改和对齐结果都在项目里，可以带上音频一起打包。" />
       <div className="p-2">
         <Row title="便携项目包（含音频）" sub=".kara.zip，可在另一台电脑直接导入"
           action={<DownloadButton href={ppath('/package?include_audio=1')} big check={false} size="xs" variant="primary" icon={<Download className="size-3.5" />} aria-label="下载便携项目包（含音频）">下载</DownloadButton>} />

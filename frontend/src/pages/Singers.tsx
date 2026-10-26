@@ -22,7 +22,7 @@ import { Badge, Button, Callout, Card, CardBody, CardHeader, Input, Kbd, PageHea
 import { MarkersDialog } from './singers/MarkersDialog';
 import { SingerList } from './singers/SingerList';
 import { INTRO } from '@/lib/guide';
-import { FirstTip, HelpButton } from '@/components/guide/Help';
+import { HelpButton } from '@/components/guide/Help';
 
 const NO_SINGERS: KaraokeSingers = { members: [], mix: 'split', direction: 'vertical' };
 
@@ -318,7 +318,6 @@ export function SingersPage() {
         description={INTRO.singers}
         actions={<Button onClick={() => setStep('karaoke')} icon={<ArrowRight className="size-4" />}>下一步：卡拉OK字幕</Button>}
       />
-      <FirstTip k="singers.first" className="mb-4" />
       {markers > 0 && (
         <Callout tone="info" className="mb-4" title={`有 ${markers} 行歌词开头写着演唱者（如「A：」「【成员】」）`}
           actions={<Button size="sm" variant="secondary" icon={<Tags className="size-4" />} onClick={() => setMarkersOpen(true)}>识别并指定…</Button>}>

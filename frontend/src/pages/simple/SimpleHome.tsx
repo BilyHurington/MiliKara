@@ -342,7 +342,7 @@ function StepBlock({ n, title, help, children }: { n: number; title: string; hel
     <section className="flex gap-4">
       <span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent">{n}</span>
       <div className="min-w-0 flex-1">
-        <h3 className="mb-2 flex items-center gap-1 text-sm font-semibold">{title}<HelpButton k={help} /></h3>
+        <div className="mb-2 flex items-center gap-1"><h3 className="text-sm font-semibold">{title}</h3><HelpButton k={help} /></div>
         {children}
       </div>
     </section>

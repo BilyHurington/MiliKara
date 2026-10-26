@@ -6,7 +6,8 @@ import { useSyncExternalStore } from 'react';
 import { SHORTCUTS, type ShortcutGroup } from '@/lib/guide';
 import { MOD_KEY, SHIFT_KEY } from '@/lib/keys';
 import { useApp, type Step } from '@/store/app';
-import { Dialog, Kbd, Tip } from '@/components/ui';
+import { Button, Dialog, Kbd, Tip } from '@/components/ui';
+import { resetTips } from './Help';
 
 const PAGE_GROUP: Partial<Record<Step, ShortcutGroup>> = { calibrate: 'calibrate', review: 'review', singers: 'singers' };
 
@@ -18,6 +19,9 @@ export function setShortcutsOpen(v: boolean) {
   for (const l of listeners) l();
 }
 
+/** The key that opens the sheet: "?" as typed (whatever the keyboard layout), not while typing. */
+export const isShortcutsKey = (e: KeyboardEvent) => e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey;
+
 const keyName = (k: string) => (k === 'Mod' ? MOD_KEY : k === 'Shift' ? SHIFT_KEY : k);
 
 export function ShortcutsDialog() {
@@ -26,7 +30,8 @@ export function ShortcutsDialog() {
   const page = PAGE_GROUP[step];
   const groups: ShortcutGroup[] = page ? [page, 'global'] : ['global'];
   return (
-    <Dialog open={isOpen} onOpenChange={setShortcutsOpen} title="快捷键" description="输入框、对话框里打字时不会触发">
+    <Dialog open={isOpen} onOpenChange={setShortcutsOpen} title="快捷键" description="输入框、对话框里打字时不会触发"
+      footer={<Button size="sm" variant="ghost" onClick={() => { resetTips(); setShortcutsOpen(false); }}>重新显示使用提示</Button>}>
       <div className="space-y-5">
         {groups.map((g) => (
           <section key={g}>

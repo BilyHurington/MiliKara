@@ -17,13 +17,13 @@ const MODES: { value: Mode; title: string; icon: typeof Type; points: string[] }
     value: 'plain',
     title: '普通模式',
     icon: Type,
-    points: ['音频 + 已知歌词（或注音 JSON）', '不使用任何外部时间锚点，整段有序对齐', '导入 LRC 时只取正文，并明确提示时间被忽略'],
+    points: ['音频 + 歌词文字', '只靠声音对齐整首歌', '导入 LRC 时只用文字，会提示时间没有使用'],
   },
   {
     value: 'lrc',
     title: 'LRC 增强模式',
     icon: Timer,
-    points: ['音频 + 带行时间的歌词', '先标记首个发音校准全局偏移', '句首锚点约束细对齐；无有效时间时要求补充或切换，不静默降级'],
+    points: ['音频 + 带行时间的歌词（LRC）', '先标出第一句开始唱的位置', '用每行的时间帮助定位，长前奏、间奏、重复副歌更稳'],
   },
 ];
 
