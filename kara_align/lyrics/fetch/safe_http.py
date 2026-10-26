@@ -3,7 +3,8 @@
 * only an allowlist of music platform hosts, http/https, default ports;
 * redirects are followed manually and every hop is re-validated;
 * host names must resolve to public addresses only (no loopback / private /
-  link-local / reserved targets);
+  link-local / reserved targets) — or to the addresses proxy tools hand out in
+  "Fake-IP" mode, which the proxy itself connects onwards;
 * bounded response size and timeouts; no cookies are read or persisted and
   environment settings (netrc, proxies from env) are not consulted.
 """
@@ -56,6 +57,21 @@ def system_resolver(host: str) -> list[str]:
     return sorted({info[4][0] for info in infos})
 
 
+# What proxy tools in "Fake-IP" mode (Clash / Mihomo / Surge / sing-box with TUN or an enhanced mode)
+# answer for every name: the connection to it goes through the proxy, which reaches the real host.
+# Accepted only for the music platforms' own names (the allowlist above), never a real private network:
+# 198.18.0.0/15 is reserved for benchmarks; fc00::/18 (sing-box) and fdfe:dcba:9876::/64 (Mihomo) are
+# those tools' default IPv6 ranges.
+FAKE_IP_NETS = tuple(ipaddress.ip_network(n) for n in ("198.18.0.0/15", "fc00::/18", "fdfe:dcba:9876::/64"))
+
+
+def is_fake_ip(addr: str) -> bool:
+    ip = ipaddress.ip_address(addr.split("%")[0])
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return any(ip.version == n.version and ip in n for n in FAKE_IP_NETS)
+
+
 def is_public_ip(addr: str) -> bool:
     ip = ipaddress.ip_address(addr.split("%")[0])
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
@@ -84,9 +100,11 @@ def validate_url(url: str, resolver: Resolver) -> None:
     addrs = resolver(host)
     if not addrs:
         raise FetchError(f"无法解析域名 {host}")
-    for a in addrs:
-        if not is_public_ip(a):
-            raise FetchError(f"{host} resolves to a non-public address; refused")
+    bad = [a for a in addrs if not is_public_ip(a) and not is_fake_ip(a)]
+    if bad:
+        raise FetchError(f"{host} 被解析到了本机或局域网地址（{bad[0]}），为安全起见已拒绝访问。"
+                         "可能是代理软件或网易云“解灰”之类的工具修改了 DNS / hosts："
+                         "关闭这些工具后重试，或者直接粘贴歌词文本")
 
 
 @dataclass

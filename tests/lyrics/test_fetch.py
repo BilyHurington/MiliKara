@@ -90,9 +90,29 @@ def test_private_dns_refused():
     def handler(req):
         raise AssertionError("must not be contacted")
 
-    for addr in ("127.0.0.1", "10.0.0.5", "192.168.1.2", "169.254.1.1", "::1", "::ffff:127.0.0.1"):
-        with pytest.raises(FetchError, match="non-public"):
+    for addr in ("127.0.0.1", "10.0.0.5", "192.168.1.2", "169.254.1.1", "::1", "::ffff:127.0.0.1", "fd12:3456::1"):
+        with pytest.raises(FetchError, match="本机或局域网地址"):
             client(handler, resolver=lambda h, a=addr: [a]).get("https://music.163.com/api/x")
+    # a fake address next to a real private one: still refused
+    with pytest.raises(FetchError, match="10.0.0.5"):
+        client(handler, resolver=lambda h: ["198.18.0.7", "10.0.0.5"]).get("https://music.163.com/api/x")
+
+
+def test_a_proxy_in_fake_ip_mode_is_used():
+    """Clash / Mihomo / sing-box with Fake-IP answer 198.18.x.x (and their own IPv6 ranges) for every
+    name; the proxy reaches the real host.  Allowed for the music platforms' names."""
+    seen = []
+
+    def handler(req):
+        seen.append(str(req.url))
+        return httpx.Response(200, json={"ok": True})
+
+    for addrs in (["198.18.0.12"], ["198.19.255.1"], ["198.18.3.4", "fc00::18"], ["fdfe:dcba:9876::5"]):
+        assert client(handler, resolver=lambda h, a=addrs: a).get("https://music.163.com/api/x").json() == {"ok": True}
+    assert len(seen) == 4
+    # the allowlist still applies
+    with pytest.raises(FetchError, match="不支持"):
+        client(handler, resolver=lambda h: ["198.18.0.12"]).get("https://example.com/x")
 
 
 def test_scheme_port_and_credentials_refused():
