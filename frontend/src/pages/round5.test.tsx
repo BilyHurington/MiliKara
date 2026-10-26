@@ -492,6 +492,22 @@ describe('colour template requests (F-M12)', () => {
     await waitFor(() => expect(box.scrollTop).toBe(0));
   });
 
+  it('the outline once sung: its own colour, or the same as before', async () => {
+    mockApi({ 'GET /api/karaoke/styles': () => [builtinSaved()] });
+    const base = plainStyle();
+    let latest: KaraokeStyle = base;
+    function Host() {
+      const [s, setS] = useState(base);
+      latest = s;
+      return <StylePanel style={s} onChange={setS} fonts={[]} defaultFont="" />;
+    }
+    renderUI(<Host />);
+    fireEvent.change(screen.getByLabelText('已唱描边（同描边）'), { target: { value: '#ff0000' } });
+    expect(latest.text.outline_color_sung).toBe('#FF0000');
+    fireEvent.change(screen.getByLabelText('已唱描边'), { target: { value: base.text.outline_color.toLowerCase() } });
+    expect(latest.text.outline_color_sung).toBe('');  // the outline's own colour again: no second colour
+  });
+
   it('mergeThemeColors takes only what a template decides', () => {
     const cur = plainStyle();
     cur.layout.margin_v = 333;

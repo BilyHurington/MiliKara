@@ -175,6 +175,7 @@ def regroup_words(line: Line) -> bool:
             note="; ".join(dict.fromkeys(o.note for o in uniq if o.note)),
             # display only, carried over: a katakana reading stays katakana, a line break stays before it
             katakana=any(o.katakana for o in uniq), wrap_before=uniq[0].wrap_before,
+            show_ruby=next((o.show_ruby for o in uniq if o.show_ruby is not None), None),
         )
         if kanji_owner is not None:
             seg.id = kanji_owner.id
@@ -266,8 +267,13 @@ def replace_units_keep_ids(seg: Segment, new_units: list[Unit]) -> None:
     _assign_surfaces(seg)
 
 
+RUBY_CHOICES = {"auto": None, "show": True, "hide": False}
+
+
 def set_segment_reading(line: Line, segment_id: str, reading: str, units: Optional[Sequence[str]] = None,
-                        source: str = "manual", confirm: bool = True) -> Segment:
+                        source: str = "manual", confirm: bool = True, ruby: Optional[str] = None) -> Segment:
+    """``ruby``: this word's ruby in the subtitles — "auto" (as the style says), "show", "hide";
+    None leaves it as it is."""
     seg = next((s for s in line.segments if s.id == segment_id), None)
     if seg is None:
         raise KeyError(segment_id)
@@ -279,6 +285,10 @@ def set_segment_reading(line: Line, segment_id: str, reading: str, units: Option
     seg.reading = reading
     seg.katakana = katakana
     seg.hidden = False  # a reading: it is sung
+    if ruby is not None:
+        if ruby not in RUBY_CHOICES:
+            raise ValueError(f"注音显示只能是 {' / '.join(RUBY_CHOICES)}")
+        seg.show_ruby = RUBY_CHOICES[ruby]
     seg.reading_source = source  # type: ignore[assignment]
     seg.confirmed = confirm
     seg.uncertain = False

@@ -126,6 +126,7 @@ class SegmentBody(BaseModel):
     reading: str
     units: Optional[list[str]] = None
     confirm: bool = True
+    ruby: Optional[Literal["auto", "show", "hide"]] = None  # this word's ruby; None: unchanged
 
 
 class HiddenBody(BaseModel):
@@ -774,7 +775,7 @@ def create_app(root: Optional[Path] = None, jobs: Optional[JobManager] = None,
     @app.put("/api/projects/{pid}/lines/{line_id}/segments/{segment_id}")
     def segment_reading(pid: str, line_id: str, segment_id: str, body: SegmentBody):
         h = handle(pid)
-        guard(S.set_segment_reading, h, line_id, segment_id, body.reading, body.units, body.confirm)
+        guard(S.set_segment_reading, h, line_id, segment_id, body.reading, body.units, body.confirm, body.ruby)
         return view(h)
 
     @app.put("/api/projects/{pid}/lines/{line_id}/segments/{segment_id}/hidden")

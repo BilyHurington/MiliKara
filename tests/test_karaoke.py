@@ -907,3 +907,40 @@ def test_several_videos_over_the_api(tmp_path, monkeypatch):
     assert [v["label"] for v in out["videos"]] == ["原唱", "无声"] and out["filename"] == out["videos"][0]["filename"]
     assert all(v["url"].endswith(v["filename"]) for v in out["videos"])
     assert [v["label"] for v in done({"audio": "none"})["videos"]] == ["无声"]  # one, as before v1.2.0
+
+
+def test_a_word_can_always_or_never_show_its_ruby():
+    line = Line(text="窓にライバル(らいばる)", segments=[_seg("窓", "まど"), _seg("に", "に"), _seg("ライバル", "らいばる")])
+    st = KaraokeStyle()  # 仅汉字
+    assert [c.ruby_text for c in A.build_chunks(line, _times(line), st, {})] == ["まど", "", ""]
+    line.segments[2].show_ruby = True  # a kana word: shown on request
+    assert [c.ruby_text for c in A.build_chunks(line, _times(line), st, {})] == ["まど", "", "らいばる"]
+    line.segments[0].show_ruby = False  # a kanji word: never
+    assert [c.ruby_text for c in A.build_chunks(line, _times(line), st, {})] == ["", "", "らいばる"]
+    st.ruby.enabled = False  # the style's switch still wins
+    assert all(not c.ruby_text for c in A.build_chunks(line, _times(line), st, {}))
+
+
+def test_a_reading_in_brackets_stays_when_its_word_shows_no_ruby():
+    word = _seg("宿敵", "らいばる")
+    word.show_ruby = False
+    line = Line(text="宿敵(ライバル)", segments=[word, Segment(surface="(ライバル)", reading=None, units=[], hidden=True)])
+    assert [c.base_text for c in A.build_chunks(line, _times(line), KaraokeStyle(), {})] == ["宿敵", "(ライバル)"]
+
+
+def test_another_outline_once_sung(tmp_path):
+    h = _project(tmp_path)
+    plain, _ = S.karaoke_ass(h)
+    mains = [l for l in plain.splitlines() if ",KMain," in l and l.startswith("Dialogue")]
+    assert mains and all("\\kf" in l for l in mains) and not any("\\clip" in l for l in mains)
+    st = h.project.karaoke.model_dump(mode="json")
+    st["text"]["outline_color_sung"] = "#FF0000"
+    text, _ = S.karaoke_ass(h, st)
+    mains = [l for l in text.splitlines() if ",KMain," in l and l.startswith("Dialogue")]
+    # two copies cut by the sweep: unsung (the style's outline) and sung with its own outline
+    assert any("\\iclip" in l for l in mains) and not any("\\kf" in l for l in mains)
+    sung = [l for l in mains if "\\clip" in l]
+    assert sung and all("\\3c&H0000FF&" in l for l in sung)
+    assert not any("\\3c&H0000FF&" in l for l in mains if "\\iclip" in l)
+    st["text"]["outline_color_sung"] = st["text"]["outline_color"]  # the same colour: as before
+    assert S.karaoke_ass(h, st)[0] == plain

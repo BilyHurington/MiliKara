@@ -763,13 +763,13 @@ def set_line_anchor(h: ProjectHandle, line_id: str, abs_ms: Optional[int], hard:
 
 
 def set_segment_reading(h: ProjectHandle, line_id: str, segment_id: str, reading: str,
-                        units: Optional[list[str]] = None, confirm: bool = True) -> None:
+                        units: Optional[list[str]] = None, confirm: bool = True, ruby: Optional[str] = None) -> None:
     from .reading.prepare import set_segment_reading as _set
 
     with h.lock:
         ln = _line(h, line_id)
         try:
-            _set(ln, segment_id, reading, units, source="manual", confirm=confirm)
+            _set(ln, segment_id, reading, units, source="manual", confirm=confirm, ruby=ruby)
         except (KeyError, ValueError) as e:
             raise ServiceError(str(e)) from e
         h.save()

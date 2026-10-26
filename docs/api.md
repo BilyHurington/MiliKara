@@ -168,7 +168,7 @@ to 0 with a message (undo: `calibration/undo`). QQ Music's `//` placeholder line
 | POST | `/api/projects/{pid}/lines/{line_id}/split` | `{at: int (char index)}` | `ProjectView` |
 | PUT | `/api/projects/{pid}/lines/{line_id}/anchor` | `{abs_ms: int\|null, hard: bool, tolerance_ms}` | `ProjectView` |
 | POST | `/api/projects/{pid}/readings/prepare` | `{overwrite_rule: bool}` | `ProjectView` + `report` |
-| PUT | `/api/projects/{pid}/lines/{line_id}/segments/{segment_id}` | `{reading, units?: [str], confirm: bool}` | `ProjectView`（读音用片假名写、而原文不是假名时，记为 `katakana`：字幕注音显示片假名） |
+| PUT | `/api/projects/{pid}/lines/{line_id}/segments/{segment_id}` | `{reading, units?: [str], confirm: bool, ruby?: "auto"\|"show"\|"hide"}`（`ruby`：这个词的字幕注音，不给则不变） | `ProjectView`（读音用片假名写、而原文不是假名时，记为 `katakana`：字幕注音显示片假名） |
 | PUT | `/api/projects/{pid}/lines/{line_id}/segments/{segment_id}/hidden` | `{hidden: bool}` | `ProjectView`（`hidden`：括号里是前一个词的读音，字幕里不显示、不演唱；只能用于没有读音的片段） |
 | POST | `/api/projects/{pid}/ai/prompt` | `{line_ids?: [str]}` | `{prompt, snapshot_id, roundtrip_id}` |
 | POST | `/api/projects/{pid}/ai/validate` | `{text}` (raw chat reply or JSON) | `{report_id, report: PatchReport}` |

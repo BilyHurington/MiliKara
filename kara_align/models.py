@@ -103,6 +103,9 @@ class Segment(_Base):
     # display only, in no revision either: the ruby is shown in katakana, as the lyrics book writes a
     # reading of its own (宿敵 → ライバル); the reading itself stays hiragana for the aligner
     katakana: bool = False
+    # display only, in no revision: this word's ruby — None as the style says (仅汉字 / 全部), True always
+    # (a kana or English word, a number), False never
+    show_ruby: Optional[bool] = None
     # a reading written in brackets after its word (宿敵(ライバル)): neither sung nor shown, the word
     # before it carries it as ruby.  Set by the AI readings only (brackets often hold a chorus line)
     hidden: bool = False
@@ -753,6 +756,9 @@ class KaraokeText(_KaraokeBase):
     color_unsung: str = _color("#FFFFFF")
     color_sung: str = _color("#2F80ED")
     outline_color: str = _color("#0B1F3A")
+    # the outline once sung; "" = the same as before.  Another colour draws the lyric swept by a moving
+    # clip (two copies), as \kf cannot change the outline while it sweeps
+    outline_color_sung: str = _color("", follow=True)
     outline: float = Field(default=4.5, ge=0, le=16)
     shadow: float = Field(default=2.0, ge=0, le=16)
     shadow_color: str = _color("#000000")
@@ -774,6 +780,8 @@ class KaraokeRuby(_KaraokeBase):
     color_unsung: str = _color("#FFFFFF")
     color_sung: str = _color("#2F80ED")
     outline_color: str = _color("#0B1F3A")
+    # the outline once sung ("" = the same); shown when the ruby sweeps with the lyric (sweep "base")
+    outline_color_sung: str = _color("", follow=True)
     outline: float = Field(default=3.0, ge=0, le=12)
 
 

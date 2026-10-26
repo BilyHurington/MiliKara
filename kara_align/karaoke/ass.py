@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from ..models import AlignmentResult, KaraokeStyle, Line, Project, Segment
 from ..reading.japanese import is_kanji, to_hiragana, to_katakana
@@ -262,8 +262,10 @@ def build_chunks(line: Line, times: dict[str, tuple[Optional[int], Optional[int]
         return range_singers(chars, pos, pos + n, line.text if len(line.text) == len(chars) else None)
 
     def shows_ruby(seg: Segment) -> bool:
-        return (ruby_cfg.enabled and seg.lang == "ja" and bool(seg.units)
-                and (has_kanji(seg.surface) or ruby_cfg.target == "all" or any(c.isdigit() for c in seg.surface)))
+        if not (ruby_cfg.enabled and seg.lang == "ja" and seg.units) or seg.show_ruby is False:
+            return False  # (False: this word never, set in the reading editor)
+        return (seg.show_ruby is True or has_kanji(seg.surface) or ruby_cfg.target == "all"
+                or any(c.isdigit() for c in seg.surface))
 
     ruby_before = False  # the word before shows its ruby
     for seg in line.segments:
@@ -296,7 +298,8 @@ def build_chunks(line: Line, times: dict[str, tuple[Optional[int], Optional[int]
                 base = [Part(surface, min(starts) if starts else None, max(ends) if ends else None)]
             ruby: list[Part] = []
             # "仅汉字" counts digits as kanji: how 24 is sung is not written either
-            wants = shows_ruby(seg) and (kanji or ruby_cfg.target == "all" or any(c.isdigit() for c in surface))
+            wants = shows_ruby(seg) and (kanji or ruby_cfg.target == "all" or any(c.isdigit() for c in surface)
+                                         or seg.show_ruby is True)
             if wants:
                 # a reading the lyrics write in katakana (宿敵 → ライバル) stays katakana over hiragana ruby
                 script = "katakana" if seg.katakana and ruby_cfg.script == "hiragana" else ruby_cfg.script
@@ -1098,7 +1101,8 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
     def emit_following(layer: int, name: str, t_from: float, t_to: float, pos: str, text: str, unsung: str,
                        font: str, size: float, glow_width: float, with_glow: bool,
                        segs: list[tuple[int, int, float, float]], hi: float, fad: str,
-                       bands: tuple[list[Band], list[Band]] = ([BASE_BAND], [BASE_BAND])) -> None:
+                       bands: tuple[list[Band], list[Band]] = ([BASE_BAND], [BASE_BAND]),
+                       outline_sung: str = "") -> None:
         """Text swept by a moving \\clip instead of \\kf: the text in the unsung colour cut right of the
         sweep and in the sung colour (the style's primary) cut left of it, so every pixel comes from one
         of the two, also while fading.  Singer bands: the same for each band, both cuts inside it."""
@@ -1126,7 +1130,10 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
             sty, un, _, _, actor = band_look(b, name, unsung)
             emit(layer, t_from, t_to, sty, pos + f"\\1c{bgr_tag(un)}" + blend_tags(b, "outline") + iclip, plain,
                  fad, actor)
-            emit(layer, t_from, t_to, sty, pos + blend_tags(b, "sung", "outline") + clip, plain, fad, actor)
+            # the sung copy's own outline colour (a singer's band keeps the singer's outline)
+            sung_outline = f"\\3c{bgr_tag(outline_sung)}" if outline_sung and not b.singer else ""
+            emit(layer, t_from, t_to, sty, pos + blend_tags(b, "sung", "outline") + sung_outline + clip, plain,
+                 fad, actor)
 
     def emit_trans(t_from: float, t_to: float, pos: str, text: str, fad: str, ids: tuple[int, ...],
                    span: tuple[float, float]) -> None:
@@ -1245,6 +1252,16 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
     tag = "kf" if tm.highlight == "sweep" else "k"
     instant = tm.highlight != "sweep"
     following = rb.sweep == "base" and has_ruby
+
+    def other_outline(c: Any) -> str:
+        """The outline once sung, when it differs ("" otherwise)."""
+        v = (c.outline_color_sung or "").upper()
+        return v if v and v != c.outline_color.upper() else ""
+
+    main_outline_sung = other_outline(txt)
+    ruby_outline_sung = other_outline(txt if rb.follow_colors else rb)
+    # \kf cannot change the outline while it sweeps: another sung outline draws the lyric as two copies
+    main_follows = following or bool(main_outline_sung)
     edge = (max(txt.outline, 0) + max(txt.shadow, 0) + (glow.size + glow.blur if glow.enabled else 0)) * k + 2
     fx_on = style.effects.kind != "none"
     syllables: list[Syllable] = []
@@ -1315,25 +1332,27 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
                 ruby_pos = f"\\an2\\pos({cx:.1f},{ruby_y:.1f}){fs}"
                 bw = m_main.width(c.base_text) * scale
                 rw = m_ruby.width(c.ruby_text) * scale if (c.ruby and m_ruby is not None) else 0.0
-                segs = piece_segments(c, cx, bw, int(t_from), m_main) if (following or fx_on) else []
+                segs = piece_segments(c, cx, bw, int(t_from), m_main) if (main_follows or fx_on) else []
                 main_bands = bands_for(c.singers, cx, bw, main_y, main_size * scale, main_ink, run)
                 r_bands = ([BASE_BAND], [BASE_BAND])
                 if c.ruby and m_ruby is not None and ruby_bands:
                     r_bands = bands_for(c.singers, cx, rw, ruby_y, ruby_size * scale, ruby_ink, run, ruby=True)
-                if following:
+                if main_follows:
                     # lyric and ruby cut by one computed line: libass places its own \\kf boundary by
                     # glyph ink, a few pixels away from any position computed outside it
                     # once sung, the edges beyond the last glyph's advance (outline, glow) turn too
                     hi = cx + bw / 2 + edge
                     emit_following(L_MAIN, "KMain", t_from, t_to, main_pos, c.base_text, txt.color_unsung,
-                                   family, main_size, glow.size * k, True, segs, hi, fad, main_bands)
+                                   family, main_size, glow.size * k, True, segs, hi, fad, main_bands,
+                                   outline_sung=main_outline_sung)
                 else:
                     emit_text(L_MAIN, t_from, t_to, "KMain", main_pos, c.base, glow.size * k, True, family,
                               main_size, fad, main_bands)
                 if c.ruby and following:
                     hi = max(cx + bw / 2, cx + rw / 2) + edge
                     emit_following(L_RUBY, "KRuby", t_from, t_to, ruby_pos, c.ruby_text, ruby_unsung, ruby_family,
-                                   ruby_size, glow.size * k * 0.55, glow.ruby, segs, hi, fad, r_bands)
+                                   ruby_size, glow.size * k * 0.55, glow.ruby, segs, hi, fad, r_bands,
+                                   outline_sung=ruby_outline_sung)
                 elif c.ruby:
                     emit_text(L_RUBY, t_from, t_to, "KRuby", ruby_pos, c.ruby, glow.size * k * 0.55, glow.ruby,
                               ruby_family, ruby_size, fad, r_bands)

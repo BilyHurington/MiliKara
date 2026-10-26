@@ -244,6 +244,20 @@ describe('interactions', () => {
     expect(await screen.findByRole('dialog', { name: /修改读音：3/ })).toBeInTheDocument();
   });
 
+  it('enhance: a word can always or never show its ruby', async () => {
+    localStorage.removeItem('kara.enhanceTab');
+    seedStore('enhance');
+    const api = serverLike();
+    renderUI(<EnhancePage />);
+    const [chip] = await screen.findAllByRole('button', { name: /^君/ });
+    await userEvent.click(chip);
+    const dialog = await screen.findByRole('dialog', { name: /修改读音：君/ });
+    expect(within(dialog).getByRole('radio', { name: '自动' })).toBeChecked();
+    await userEvent.click(within(dialog).getByRole('radio', { name: '不显示' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(api.find('PUT', '/segments/')[0]?.body).toMatchObject({ ruby: 'hide' }));
+  });
+
   it('enhance: a reading the lyrics write in katakana, and brackets taken for a reading', async () => {
     localStorage.removeItem('kara.enhanceTab');
     const pv = fixturePV();

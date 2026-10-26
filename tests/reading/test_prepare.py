@@ -73,3 +73,22 @@ def test_capability_warnings():
     assert any("中文" in m for m in msgs)
     assert doc.lines[0].segments[0].lang == "zh"  # not forced to Japanese
     assert not capability_warnings(LyricsDoc(lines=[doc.lines[1]]), ["ja"])
+
+
+def test_the_ruby_of_one_word_is_set_with_its_reading():
+    from kara_align.models import Line, LyricsDoc
+    from kara_align.reading.prepare import prepare_doc, set_segment_reading
+
+    doc = LyricsDoc(lines=[Line(id="L1", text="君と")])
+    prepare_doc(doc)
+    ln = doc.lines[0]
+    seg = ln.segments[0]
+    set_segment_reading(ln, seg.id, "きみ", ruby="hide")
+    assert seg.show_ruby is False
+    set_segment_reading(ln, seg.id, "きみ")  # not given: unchanged
+    assert seg.show_ruby is False
+    set_segment_reading(ln, seg.id, "きみ", ruby="auto")
+    assert seg.show_ruby is None
+    import pytest
+    with pytest.raises(ValueError):
+        set_segment_reading(ln, seg.id, "きみ", ruby="sometimes")

@@ -167,6 +167,7 @@ function SegmentChip({ seg, onClick }: { seg: Segment; onClick: () => void }) {
     `来源：${src.label}`,
     seg.units.length ? '' : '没有读音：点击填写（不填时这里不参与对齐）',
     seg.katakana ? '注音按歌词的写法显示为片假名' : '',
+    seg.show_ruby === true ? '字幕上总是显示注音' : seg.show_ruby === false ? '字幕上不显示注音' : '',
     seg.confirmed ? '已确认' : warn ? '不确定，建议确认' : '',
     seg.note,
     seg.candidates.length ? `候选：${seg.candidates.join(' / ')}` : '',
@@ -224,6 +225,7 @@ function EditReadingDialog({ line, seg, onClose }: { line: Line; seg: Segment; o
   const [reading, setReading] = useState(shown(seg, seg.reading ?? ''));
   const [units, setUnits] = useState(seg.units.map((u) => shown(seg, u.reading)).join(' / '));
   const [confirm, setConfirm] = useState(true);
+  const [ruby, setRuby] = useState<'auto' | 'show' | 'hide'>(seg.show_ruby == null ? 'auto' : seg.show_ruby ? 'show' : 'hide');
   const [busy, setBusy] = useState(false);
   const unitList = splitUnits(units);
   const joined = unitList.join('');
@@ -241,6 +243,7 @@ function EditReadingDialog({ line, seg, onClose }: { line: Line; seg: Segment; o
         reading: reading.trim(),
         units: unitList.length ? unitList : null,
         confirm,
+        ruby,
       });
       setPV(pv);
       toast('ok', `已更新「${seg.surface}」`, `${reading.trim()}${confirm ? ' · 已确认' : ''}`);
@@ -291,6 +294,16 @@ function EditReadingDialog({ line, seg, onClose }: { line: Line; seg: Segment; o
           </div>
           {mismatch && <div className="mt-2 text-xs text-danger">单元拼起来（{joined}）必须等于读音（{reading.trim()}）</div>}
         </div>
+        {seg.lang === 'ja' && (
+          <Field group label="字幕注音" hint={{
+            auto: '按字幕样式的设置（仅汉字 / 全部）',
+            show: '这个词总是显示注音（例如给片假名、英文单词标读音）',
+            hide: '这个词不显示注音',
+          }[ruby]}>
+            <Segmented size="sm" label="字幕注音" value={ruby} onChange={setRuby}
+              options={[{ value: 'auto', label: '自动' }, { value: 'show', label: '显示' }, { value: 'hide', label: '不显示' }]} />
+          </Field>
+        )}
         <Switch checked={confirm} onChange={setConfirm} label="确认此读音（锁定，规则与 AI 不再覆盖）" />
         <p className="text-xs text-subtle">单元分组改变时会生成新的单元 ID，旧的人工时间不会被误绑到新单元上。</p>
       </div>

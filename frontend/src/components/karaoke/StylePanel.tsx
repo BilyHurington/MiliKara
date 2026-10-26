@@ -209,6 +209,8 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
             <ColorField label="未唱" value={T.color_unsung} onChange={(v) => patch((s) => { s.text.color_unsung = v; })} />
             <ColorField label="已唱（扫光）" value={T.color_sung} onChange={(v) => patch((s) => { s.text.color_sung = v; })} />
             <ColorField label="描边" value={T.outline_color} onChange={(v) => patch((s) => { s.text.outline_color = v; })} />
+            <ColorField label={T.outline_color_sung ? '已唱描边' : '已唱描边（同描边）'} value={T.outline_color_sung || T.outline_color}
+              onChange={(v) => patch((s) => { s.text.outline_color_sung = v === s.text.outline_color ? '' : v; })} />
             <ColorField label="阴影" value={T.shadow_color} onChange={(v) => patch((s) => { s.text.shadow_color = v; })} />
           </ColorGroup>
           <ColorGroup title="注音" action={<Switch checked={R.follow_colors} onChange={(v) => patch((s) => { s.ruby.follow_colors = v; })} label={<span className="text-xs text-muted">跟随歌词</span>} />}>
@@ -217,8 +219,13 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
                 <ColorField label="未唱" value={R.color_unsung} onChange={(v) => patch((s) => { s.ruby.color_unsung = v; })} />
                 <ColorField label="已唱" value={R.color_sung} onChange={(v) => patch((s) => { s.ruby.color_sung = v; })} />
                 <ColorField label="描边" value={R.outline_color} onChange={(v) => patch((s) => { s.ruby.outline_color = v; })} />
+                <ColorField label={R.outline_color_sung ? '已唱描边' : '已唱描边（同描边）'} value={R.outline_color_sung || R.outline_color}
+                  onChange={(v) => patch((s) => { s.ruby.outline_color_sung = v === s.ruby.outline_color ? '' : v; })} />
               </>
             ) : <p className="text-xs text-subtle">与歌词相同的颜色和描边</p>}
+            {(R.follow_colors ? T.outline_color_sung : R.outline_color_sung) && R.sweep !== 'base' && (
+              <p className="text-xs text-subtle">注音的已唱描边只在“注音 → 唱过的部分”选“与歌词对齐”时显示。</p>
+            )}
           </ColorGroup>
           <ColorGroup title="翻译">
             <ColorField label="文字" value={Tr.color} onChange={(v) => patch((s) => { s.translation.color = v; })} />
@@ -428,8 +435,9 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
 /** The fields a colour template sets; changing any of them by hand makes the style "自定义". */
 function themedLook(s: KaraokeStyle) {
   const { text: t, ruby: r, translation: tr, info: i } = s;
-  return JSON.stringify([t.color_unsung, t.color_sung, t.outline_color, t.shadow_color, r.follow_colors, r.color_unsung,
-    r.color_sung, r.outline_color, tr.color, tr.outline_color, tr.glow, i.color, i.accent, s.glow, s.effects]);
+  return JSON.stringify([t.color_unsung, t.color_sung, t.outline_color, t.outline_color_sung ?? '', t.shadow_color,
+    r.follow_colors, r.color_unsung, r.color_sung, r.outline_color, r.outline_color_sung ?? '', tr.color, tr.outline_color, tr.glow,
+    i.color, i.accent, s.glow, s.effects]);
 }
 
 /**
@@ -440,8 +448,10 @@ function themedLook(s: KaraokeStyle) {
 export function mergeThemeColors(current: KaraokeStyle, themed: KaraokeStyle): KaraokeStyle {
   const next = structuredClone(current);
   const { text: t, ruby: r, translation: tr, info: i } = themed;
-  Object.assign(next.text, { color_unsung: t.color_unsung, color_sung: t.color_sung, outline_color: t.outline_color, shadow_color: t.shadow_color });
-  Object.assign(next.ruby, { follow_colors: r.follow_colors, color_unsung: r.color_unsung, color_sung: r.color_sung, outline_color: r.outline_color });
+  Object.assign(next.text, { color_unsung: t.color_unsung, color_sung: t.color_sung, outline_color: t.outline_color,
+    outline_color_sung: t.outline_color_sung ?? '', shadow_color: t.shadow_color });
+  Object.assign(next.ruby, { follow_colors: r.follow_colors, color_unsung: r.color_unsung, color_sung: r.color_sung, outline_color: r.outline_color,
+    outline_color_sung: r.outline_color_sung ?? '' });
   Object.assign(next.translation, { color: tr.color, outline_color: tr.outline_color, glow: tr.glow });
   Object.assign(next.info, { color: i.color, accent: i.accent });
   next.glow = structuredClone(themed.glow);

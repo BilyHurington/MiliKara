@@ -22,6 +22,8 @@ export interface Segment {
   katakana?: boolean;
   /** brackets holding the reading of the word before them (宿敵(ライバル)): not shown, not sung */
   hidden?: boolean;
+  /** this word's ruby: null as the style says (仅汉字 / 全部), true always, false never */
+  show_ruby?: boolean | null;
 }
 
 export interface LineAnchor { abs_ms: number; hard: boolean; tolerance_ms: number; note: string }
@@ -239,12 +241,16 @@ export interface KaraokeStyle {
   };
   text: {
     font: string; size: number; bold: boolean; color_unsung: string; color_sung: string; outline_color: string;
+    /** the outline once sung; '' = the same as outline_color */
+    outline_color_sung?: string;
     outline: number; shadow: number; shadow_color: string; shadow_opacity: number;
   };
   ruby: {
     enabled: boolean; script: 'hiragana' | 'katakana' | 'romaji'; target: 'kanji' | 'all'; size_pct: number; gap: number;
     fit: 'widen' | 'overflow'; sweep: 'own' | 'base'; follow_colors: boolean; font: string; color_unsung: string; color_sung: string;
     outline_color: string; outline: number;
+    /** the outline once sung ('' = the same); shown when the ruby sweeps with the lyric */
+    outline_color_sung?: string;
   };
   translation: {
     enabled: boolean; position: 'opposite' | 'block' | 'line'; size_pct: number; font: string; bold: boolean;
