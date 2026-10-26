@@ -8,7 +8,9 @@ the lyric: the upper row's glyphs start where the lyric's start, the lower row's
 lyric's end (the font's em box, ``Measurer.ink``).  Several singers: their labels in their own colours,
 one row each for two singers, two rows shared out evenly for more; a combination of exactly these
 singers with a label of its own (e.g. 全员) in one row, in the lyrics' own colour (not one member's).
-Each run glows like its singer's lyrics.
+Each run glows like its singer's lyrics.  Names or symbols the lyric font lacks: all of it in a font
+that has every character (where libass would fill them in from a font of its own choosing, at
+another width than measured).
 """
 
 from __future__ import annotations
@@ -81,29 +83,35 @@ def label_rows(sg: KaraokeSingers, ids: tuple[int, ...]) -> list[list[tuple[str,
 
 
 class Tagger:
-    """The start / end blocks of each line for one style (measured in its lyric font)."""
+    """The start / end blocks of each line for one style (measured in its lyric font, or the font that has
+    all their characters)."""
 
     def __init__(self, style: KaraokeStyle, colour: dict[int, tuple[str, str]], family: str, bold: bool,
                  main_size: float, ink: tuple[float, float]):
-        """``colour``: each singer's (text colour, glow colour)."""
-        from .fonts import Measurer
+        """``colour``: each singer's (text colour, glow colour); ``ink``: the lyric font's em box."""
+        from .fonts import BUNDLED_JP, HAN_FAMILIES, Measurer, covering
 
         self.style = style
-        self.sg = style.singers
+        self.sg = sg = style.singers
         self.colour = colour
         self.main_size = main_size
         self.ink = ink
-        em = main_size * max(0.05, ink[1] - ink[0])  # the lyric's em height
-        self.em = em
-        # two rows: each row's em height is half the lyric's (less the gap between them)
-        self.two_size = max(1.0, (em * (1 - ROW_GAP_EM)) / 2 / max(0.05, ink[1] - ink[0]))
-        self.one_size = max(1.0, em * ONE_ROW_EM / max(0.05, ink[1] - ink[0]))
         dec = style.decor
+        text = "".join([*(label_of(sg, i) for i in range(1, len(sg.members) + 1)), *(c.label for c in sg.combos),
+                        dec.start, dec.end, "/"])
+        self.family = covering(family, bold, text, [BUNDLED_JP, *HAN_FAMILIES])
+        # the em box of what is written beside the lines (its own font's when that is another)
+        self.tag_ink = Measurer(self.family, bold, main_size).ink if self.family != family else ink
+        em = main_size * max(0.05, ink[1] - ink[0])  # the lyric's em height
+        span = max(0.05, self.tag_ink[1] - self.tag_ink[0])
+        # two rows: each row's em height is half the lyric's (less the gap between them)
+        self.two_size = max(1.0, em * (1 - ROW_GAP_EM) / 2 / span)
+        self.one_size = max(1.0, em * ONE_ROW_EM / span)
         self.decor_size = max(1.0, main_size * dec.size_pct / 100)
         self.neutral = (style.text.color_unsung, style.glow.color_unsung)
         self.decor_colour = (dec.color or style.text.color_unsung, style.glow.color_unsung)
         self.gap = main_size * GAP_EM
-        self._m = {s: Measurer(family, bold, s) for s in {self.two_size, self.one_size, self.decor_size}}
+        self._m = {s: Measurer(self.family, bold, s) for s in {self.two_size, self.one_size, self.decor_size}}
 
     def _block(self, rows: list[list[tuple[str, str, str]]], size: float, kind: str) -> TagBlock:
         m = self._m[size]
@@ -138,9 +146,9 @@ class Tagger:
         """The y of each row's line-box bottom (``\\an1`` / ``\\an3``) for a lyric whose line box ends at
         ``main_y`` and is ``main_size * scale`` tall: two rows fill the lyric's em box from its top to its
         bottom; one row sits in its middle."""
-        size, (i0, i1) = block.size * scale, self.ink
+        size, (i0, i1) = block.size * scale, self.tag_ink
         top = main_y - self.main_size * scale  # the lyric's line box
-        em_top, em_bottom = top + self.main_size * scale * i0, top + self.main_size * scale * i1
+        em_top, em_bottom = top + self.main_size * scale * self.ink[0], top + self.main_size * scale * self.ink[1]
         if len(block.rows) == 2:
             # upper row: its em top on the lyric's; lower row: its em bottom on the lyric's
             return [em_top + size * (1 - i0), em_bottom + size * (1 - i1)]

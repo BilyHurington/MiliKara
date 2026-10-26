@@ -116,3 +116,39 @@ def test_legend(tmp_path):
     for ln in h.project.lyrics.lines:
         ln.singers, ln.singer_spans = [1], []
     assert legend_entries(h.project, st) == []
+
+
+def test_long_names_stay_inside_the_frame(tmp_path):
+    h = _project(tmp_path)
+    _two_singers(h)
+    st = h.project.karaoke
+    st.text.size = 200  # the lyric alone is half the frame: with the labels it must wrap and shrink
+    st.singers.members[0].label, st.singers.members[1].label = "天海春香" * 3, "秋月律子" * 3
+    st.singers.labels = "start"
+    st.decor.end = "★"
+    h.save()
+    text, warnings = S.karaoke_ass(h)
+    family = re.search(r"^Style: KMain,([^,]+),", text, re.M).group(1)
+    for e in _tags(text, "天海春香") + _tags(text, "秋月律子") + _tags(text, "★"):
+        x, size = _x(e), float(re.search(r"\\fs([\d.]+)", e).group(1))
+        body = e.rsplit("}", 1)[1]
+        w = Measurer(family, True, size).width(body)
+        left, right = (x - w, x) if "\\an3" in e else (x, x + w)
+        assert left >= 0 and right <= 1920, e
+    # the labels go with the first piece of the wrapped line, the symbol with the last
+    first_label = min(e.split(",")[1] for e in _tags(text, "天海春香" * 3))
+    last_star = max(e.split(",")[1] for e in _tags(text, "★"))
+    assert first_label < last_star
+
+
+def test_names_the_lyric_font_lacks_use_a_font_that_has_them(tmp_path, monkeypatch):
+    from kara_align.karaoke import fonts
+
+    h = _project(tmp_path)
+    _two_singers(h)
+    h.project.karaoke.singers.labels = "end"
+    h.save()
+    monkeypatch.setattr(fonts, "covering", lambda family, bold, text, prefer: "Other Sans")
+    text, _ = S.karaoke_ass(h)
+    assert all("\\fnOther Sans" in e for e in _tags(text, "}Ann"))
+    assert not any("\\fnOther Sans" in e for e in text.splitlines() if e.endswith("窓"))

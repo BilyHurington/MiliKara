@@ -1246,14 +1246,15 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
             if not before:
                 x += tags.gap * scale  # the gap is on the lyric's side
             ratio = max(0.6, b.size / main_size)  # a thin outline would not hold small text
-            look = f"\\fs{b.size * scale:.1f}\\bord{txt.outline * k * ratio:.2f}\\shad{txt.shadow * k * ratio:.2f}"
+            font = f"\\fn{tagger.family}" if tagger.family != family else ""
+            look = f"{font}\\fs{b.size * scale:.1f}\\bord{txt.outline * k * ratio:.2f}\\shad{txt.shadow * k * ratio:.2f}"
             for row, y in zip(b.rows, tagger.row_baselines(b, main_y, scale)):
                 body = "".join(f"{{\\1c{bgr_tag(c)}}}{escape_text(t)}" for t, c, _ in row)
                 pos = (f"\\an3\\pos({x + b.width * scale:.1f},{y:.1f})" if before
                        else f"\\an1\\pos({x:.1f},{y:.1f})")
                 if glow.enabled:
                     halo = "".join(f"{{\\3c{bgr_tag(g)}}}{escape_text(t)}" for t, _, g in row)
-                    emit(L_GLOW, t_from, t_to, "KGlow", pos + glow_tags(row[0][2], glow.size * k * ratio, family,
+                    emit(L_GLOW, t_from, t_to, "KGlow", pos + glow_tags(row[0][2], glow.size * k * ratio, tagger.family,
                                                                           b.size * scale, txt.bold), halo, fad)
                 emit(L_MAIN, t_from, t_to, "KMain", pos + look, body, fad)
             x += b.width * scale
