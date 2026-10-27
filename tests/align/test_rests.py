@@ -245,7 +245,8 @@ def test_singing_no_line_is_over_is_reported_on_the_line_after_it():
     assert [i.line_id for i in found] == ["L2", "L3"]
     for i, (a, b) in zip(found, ((8000, 14000), (40000, 44000))):  # (the activity is smoothed over 0.3 s)
         assert abs(i.data["from_ms"] - a) <= 300 and abs(i.data["to_ms"] - b) <= 300
-    assert "这一句之前" in found[0].message and "这一句之后" in found[1].message
+    assert "这一句之前" in found[0].message and found[0].severity == "warning"
+    assert "最后一句之后" in found[1].message and found[1].severity == "info"  # an outro: only a note
     # shorter than 2.5 s (a shout, a breath) or just past a line's end (its held note): nothing
     assert not chk.check_uncovered([_lt("L1", 1000, 4000)], _activity([(1000, 4300), (9000, 10500)]))
     # no vocal stem: nothing to go by

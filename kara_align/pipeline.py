@@ -859,7 +859,7 @@ def _holder(task: PipelineTask, what: str) -> str:
 
 
 # the checks worth a look after simple mode's alignment (the app links a warning naming 人工检查 there)
-REVIEW_CODES = ("unit_in_rest", "line_gap", "low_confidence")
+REVIEW_CODES = ("unit_in_rest", "line_gap", "low_confidence", "mode_disagree", "uncovered_singing")
 
 
 def _warn(task: PipelineTask, text: str) -> None:

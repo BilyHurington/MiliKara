@@ -115,6 +115,10 @@ def previous_timeline_sha(prev: AlignmentResult, assets: dict[str, AudioAsset]) 
 
 # the candidate of the LRC-mode cross check (shown as is in the review page)
 PLAIN_CHECK_LABEL = "普通模式（不用歌词时间）"
+# more lines disagreeing than this (and this share of those checked): one note instead of a hint each
+CROSS_CHECK_MANY = 5
+CROSS_CHECK_SHARE = 0.25
+
 
 def run_alignment(inp: AlignInputs, cancel: Optional[CancelToken] = None,
                   progress: Optional[Callable[[float, str], None]] = None) -> AlignmentResult:
@@ -434,36 +438,51 @@ def run_alignment(inp: AlignInputs, cancel: Optional[CancelToken] = None,
         if timed and lt.status == "failed" and all(u.locked for u in timed):
             lt.flags.append("manual_only")
 
+    # --- full runs: singing no line is over (on the final times)
+    uncovered = chk.check_uncovered(lines, activity) if inp.line_ids is None else []
+
     # --- LRC mode: the song decoded once more without the lyrics' times, as a check of each line (an LRC
-    # time can be wrong too: a long held note, a line the LRC times at the wrong repeat)
+    # time can be wrong too: a long held note, a line the LRC times at the wrong repeat).  The main voice
+    # only (another stream decoded freely lands anywhere its few words fit); lines whose times or anchor
+    # someone set are left as they are.  When many lines disagree the lyrics may not be the version sung
+    # (a repeat missing): then one note instead of a hint on every line.
     cross_issues: list[Issue] = []
     cross_candidates: list[Candidate] = []
-    if inp.mode == "lrc" and inp.line_ids is None and cfg.checks.cross_check_ms > 0:
+    if inp.mode == "lrc" and inp.line_ids is None and cfg.checks.cross_check_ms > 0 and selected:
         prog(0.9, "与普通模式核对")
+        counts_by_voice: dict[str, int] = {}
+        for lid in selected:
+            counts_by_voice[voices[lid]] = counts_by_voice.get(voices[lid], 0) + 1
+        main = max(counts_by_voice, key=lambda v: (counts_by_voice[v], v == "main"))
         final = {lt.line_id: lt for lt in lines}
-        by_hand = {u.line_id for u in units if u.manual is not None}  # the times someone set stay
+        by_hand = {u.line_id for u in units if u.manual is not None} | {ln.id for ln in doc.lines if ln.anchor is not None}
+        checked = 0
         for t in plan_plain(doc, nf, None, skip):
+            if t.voice != main:
+                continue
             o = decode(t, role, label=PLAIN_CHECK_LABEL)
             if not o.feasible:
                 continue
             for lid in t.retained_line_ids:
                 lt, r = final.get(lid), o.line_ranges.get(lid)
-                if lt is None or r is None or lt.start_ms is None or lid in by_hand:
+                if lt is None or r is None or lid in by_hand:
                     continue
-                d = r[0] - lt.start_ms
-                if abs(d) < cfg.checks.cross_check_ms:
+                checked += 1
+                issue = chk.mode_disagree(lid, lt.start_ms, r[0], cfg.checks.cross_check_ms) if lt.start_ms is not None else None
+                if issue is None and lt.start_ms is not None:
                     continue
-                cross_issues.append(Issue(
-                    code="mode_disagree", severity="warning", line_id=lid,
-                    message=f"不用歌词时间对齐时，这一句{'早' if d < 0 else '晚'} {abs(d) / 1000:.1f} 秒；"
-                            "两种方法结果不一致，建议试听，可以在“候选”里采用另一种",
-                    data={"plain_start_ms": int(r[0]), "diff_ms": int(d)}))
+                if issue is not None:  # (a line without times: only the candidate, its failure is reported)
+                    cross_issues.append(issue)
                 cross_candidates.append(Candidate(line_id=lid, label=PLAIN_CHECK_LABEL,
-                                                  units=unit_timings_for_line(prep, o, lid),
-                                                  summary={"role": o.role, "diff_ms": int(d),
-                                                           "note": "decoded without the lyrics' times"}))
+                                                  units=unit_timings_for_line(prep, o, lid), summary={"role": o.role}))
+        if checked and len(cross_issues) > max(CROSS_CHECK_MANY, CROSS_CHECK_SHARE * checked):
+            cross_issues = [Issue(code="mode_disagree_many", severity="info",
+                                  message=f"不用歌词时间对齐时，{len(cross_issues)} / {checked} 句的位置不同：歌词可能和演唱的版本不一致"
+                                          "（比如少了重复段、多了没唱的行），所以没有逐句提示")]
+            cross_candidates = []
 
-    all_issues = issues + dec_issues + check_issues_ + stab_issues + manual_issues + tail_issues + cross_issues
+    all_issues = (issues + dec_issues + check_issues_ + stab_issues + manual_issues + tail_issues + uncovered
+                  + cross_issues)
     all_issues = [i for i in all_issues if i.line_id is None or i.line_id in set(selected)]
     prog(0.95, "汇总结果")
     asset = inp.audio_assets[role]
