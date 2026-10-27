@@ -2098,7 +2098,8 @@ def _recheck_adopted(p: Project, target: AlignmentResult, line_ids: list[str], s
     keep = []
     for i in target.issues:
         if i.line_id in ids and (i.code in chk.CHECK_CODES or i.code in ("unstable_boundary", "decode_failed",
-                                                                         "boundary_conflict", "tail_unresolved")):
+                                                                         "boundary_conflict", "tail_unresolved",
+                                                                         "mode_disagree")):
             continue
         if i.line_id in after and i.code in ("order_conflict", "line_overlap"):
             continue

@@ -243,6 +243,13 @@ Every `url` returned for an exported file (mix, video, burn, task video, this li
 A local rerun (`align` with `line_ids`) creates a new partial result with `parent_result_id`; it never overwrites the parent.
 In plain mode it decodes only the stretch between the neighbouring lines' times in the previous result. The UI compares and adopts per line.
 
+Two hints of a full run (warnings, never changing a time by themselves): in LRC mode the song is decoded once more without the
+lyrics' times (`config.checks.cross_check_ms`, default 1000; 0 = off); a line placed that differently gets `mode_disagree`
+(`data: {plain_start_ms, diff_ms}`) and that placement as a candidate labelled `普通模式（不用歌词时间）` (adopting it drops the hint).
+Lines with times set by hand are not checked. With a vocal stem, singing at least 2.5 s long that no line is over (0.4 s around
+each line allowed) gives `uncovered_singing` on the line after it (`data: {from_ms, to_ms}`; after the last line: on it): lyrics
+the text lacks (a backing vocal, an ad-lib, a repeat written once) or a line placed elsewhere.
+
 `AlignmentResult.stats` includes `algorithm` (currently `"kara-align-decoder/3"`), `original_sha256` (the original recording the
 times refer to) and `detail_revision`. Manual edits of the previous result are applied before the checks run; they are not
 carried to a different original (issue `manual_audio_changed`, the edits stay in the unit's `manual_history`), follow a reading

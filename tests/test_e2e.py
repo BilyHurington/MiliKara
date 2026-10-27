@@ -371,3 +371,29 @@ def test_deleting_a_closing_line_keeps_where_the_last_line_ends(tmp_path):
     h = S.open_dir(tmp_path / "projects" / pid)
     assert h.project.lyrics.lines[-1].imported_end_ms == 3500
     assert client.delete(f"/api/projects/{pid}/lines/nope").status_code in (400, 404)
+
+
+def test_lrc_lines_are_checked_against_a_decode_without_the_times(tmp_path):
+    """A line the LRC places wrongly (here a hard anchor 1.5 s late): the decode without the lyrics' times
+    disagrees; reported, its placement kept as a candidate; adopting it settles the report."""
+    from kara_align.align.runner import PLAIN_CHECK_LABEL
+
+    h = _project(tmp_path, "lrc")
+    S.calibration_op(h, "mark", line_id=h.project.lyrics.sung_lines()[0].id, marked_ms=1000)
+    second = h.project.lyrics.sung_lines()[1]
+    S.set_line_anchor(h, second.id, 4500, hard=True, tolerance_ms=50)
+    r = S.run_align(h)
+    found = [i for i in r.issues if i.code == "mode_disagree"]
+    assert [i.line_id for i in found] == [second.id]
+    assert found[0].data["diff_ms"] <= -1000  # sung (and found without the times) about 1.5 s earlier
+    cand = next(c for c in r.candidates if c.label == PLAIN_CHECK_LABEL)
+    assert cand.line_id == second.id and abs(cand.units[0].start_ms - 3000) <= 45
+    adopted = S.adopt_lines(h, r.id, [second.id], candidate_id=cand.id)
+    assert not [i for i in adopted.issues if i.code == "mode_disagree"]
+    assert abs(next(u for u in adopted.units if u.line_id == second.id).start_ms - 3000) <= 45
+    # off: no second decode, no report
+    r2 = S.run_align(h, config={"checks": {"cross_check_ms": 0}})
+    assert not [i for i in r2.issues if i.code == "mode_disagree"]
+    # the plain mode itself is never checked against itself
+    S.update_settings(h, mode="plain")
+    assert not [i for i in S.run_align(h).issues if i.code == "mode_disagree"]

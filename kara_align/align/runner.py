@@ -28,6 +28,7 @@ from ..models import (
     AudioAsset,
     BackendInfo,
     Calibration,
+    Candidate,
     Coverage,
     InputSnapshot,
     Issue,
@@ -111,6 +112,9 @@ def previous_timeline_sha(prev: AlignmentResult, assets: dict[str, AudioAsset]) 
             return a.sha256 if a.role == "original" else a.source.parent_sha256
     return None
 
+
+# the candidate of the LRC-mode cross check (shown as is in the review page)
+PLAIN_CHECK_LABEL = "普通模式（不用歌词时间）"
 
 def run_alignment(inp: AlignInputs, cancel: Optional[CancelToken] = None,
                   progress: Optional[Callable[[float, str], None]] = None) -> AlignmentResult:
@@ -430,7 +434,36 @@ def run_alignment(inp: AlignInputs, cancel: Optional[CancelToken] = None,
         if timed and lt.status == "failed" and all(u.locked for u in timed):
             lt.flags.append("manual_only")
 
-    all_issues = issues + dec_issues + check_issues_ + stab_issues + manual_issues + tail_issues
+    # --- LRC mode: the song decoded once more without the lyrics' times, as a check of each line (an LRC
+    # time can be wrong too: a long held note, a line the LRC times at the wrong repeat)
+    cross_issues: list[Issue] = []
+    cross_candidates: list[Candidate] = []
+    if inp.mode == "lrc" and inp.line_ids is None and cfg.checks.cross_check_ms > 0:
+        prog(0.9, "与普通模式核对")
+        final = {lt.line_id: lt for lt in lines}
+        by_hand = {u.line_id for u in units if u.manual is not None}  # the times someone set stay
+        for t in plan_plain(doc, nf, None, skip):
+            o = decode(t, role, label=PLAIN_CHECK_LABEL)
+            if not o.feasible:
+                continue
+            for lid in t.retained_line_ids:
+                lt, r = final.get(lid), o.line_ranges.get(lid)
+                if lt is None or r is None or lt.start_ms is None or lid in by_hand:
+                    continue
+                d = r[0] - lt.start_ms
+                if abs(d) < cfg.checks.cross_check_ms:
+                    continue
+                cross_issues.append(Issue(
+                    code="mode_disagree", severity="warning", line_id=lid,
+                    message=f"不用歌词时间对齐时，这一句{'早' if d < 0 else '晚'} {abs(d) / 1000:.1f} 秒；"
+                            "两种方法结果不一致，建议试听，可以在“候选”里采用另一种",
+                    data={"plain_start_ms": int(r[0]), "diff_ms": int(d)}))
+                cross_candidates.append(Candidate(line_id=lid, label=PLAIN_CHECK_LABEL,
+                                                  units=unit_timings_for_line(prep, o, lid),
+                                                  summary={"role": o.role, "diff_ms": int(d),
+                                                           "note": "decoded without the lyrics' times"}))
+
+    all_issues = issues + dec_issues + check_issues_ + stab_issues + manual_issues + tail_issues + cross_issues
     all_issues = [i for i in all_issues if i.line_id is None or i.line_id in set(selected)]
     prog(0.95, "汇总结果")
     asset = inp.audio_assets[role]
@@ -472,7 +505,7 @@ def run_alignment(inp: AlignInputs, cancel: Optional[CancelToken] = None,
     return AlignmentResult(
         id=new_id("r"), created=utcnow(), mode=inp.mode, backend=inp.backend_info, config=cfg,
         snapshot=snapshot, coverage=cov, lines=lines, units=units, issues=all_issues,
-        candidates=retry_report.candidates if retry_report else [],
+        candidates=(retry_report.candidates if retry_report else []) + cross_candidates,
         parent_result_id=inp.previous.id if (inp.previous is not None and inp.line_ids is not None) else None,
         stats=stats,
     )

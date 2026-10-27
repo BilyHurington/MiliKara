@@ -384,6 +384,9 @@ class CheckConfig(_Base):
     stability_tolerance_ms: int = 150
     min_coverage: float = 0.999
     max_line_gap_ms: int = 4000  # a longer pause between two units of one line is suspicious
+    # LRC mode: decode the song once more without the lyrics' times; a line placed this differently
+    # (ms) is reported and the other placement kept as a candidate (0 = off)
+    cross_check_ms: int = Field(default=1000, ge=0, le=10000)
 
 
 class RetryConfig(_Base):

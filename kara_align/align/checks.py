@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
+import numpy as np
+
 from ..models import CheckConfig, Issue, LineTiming, UnitTiming
 from .activity import VocalActivity
 
@@ -132,6 +134,65 @@ def check_rest(units: list[UnitTiming], activity: Optional[VocalActivity]) -> li
     return issues
 
 
+# singing the lyrics have no line over: at least this long, this much (rest value) singing
+UNCOVERED_MIN_MS = 2500
+UNCOVERED_REST = 0.25  # rest at most this: clearly singing (see activity.py)
+UNCOVERED_BRIDGE_MS = 600  # dips shorter than this (a breath, a consonant) do not split it
+UNCOVERED_EDGE_MS = 400  # a line's own breath / held note just past its ends
+
+
+def check_uncovered(lines: list[LineTiming], activity: Optional[VocalActivity],
+                    order: Optional[list[str]] = None) -> list[Issue]:
+    """Singing in the vocal stem that no lyric line is placed over: lyrics the song has but the text
+    does not (a backing vocal, an ad-lib, a repeat written once), or a line put somewhere else (two
+    lines of the same text, one placed over the other's place).  Reported on the line after it (the
+    last line for singing after the end); a hint to listen, never changed by itself."""
+    if activity is None or activity.rest.size == 0:
+        return []
+    timed = sorted((lt for lt in lines if lt.start_ms is not None and lt.end_ms is not None),
+                   key=lambda lt: lt.start_ms)  # type: ignore[arg-type, return-value]
+    if not timed:
+        return []
+    hop = activity.hop_ms
+    singing = activity.rest <= UNCOVERED_REST
+    covered = np.zeros(singing.size, dtype=bool)
+    for lt in timed:
+        a = max(0, int((lt.start_ms - UNCOVERED_EDGE_MS) / hop))  # type: ignore[operator]
+        b = min(covered.size, int(np.ceil((lt.end_ms + UNCOVERED_EDGE_MS) / hop)))  # type: ignore[operator]
+        covered[a:b] = True
+    free = singing & ~covered
+    # runs of free singing, bridging short dips
+    runs: list[list[int]] = []
+    idx = np.flatnonzero(free)
+    bridge = int(UNCOVERED_BRIDGE_MS / hop)
+    for i in idx:
+        if runs and i - runs[-1][1] <= bridge and not covered[runs[-1][1]:i].any():
+            runs[-1][1] = int(i)
+        else:
+            runs.append([int(i), int(i)])
+    # one hint per line: the runs before the same line together
+    found: dict[str, tuple[float, float, bool]] = {}
+    for a, b in runs:
+        a_ms, b_ms = a * hop, (b + 1) * hop
+        if b_ms - a_ms < UNCOVERED_MIN_MS:
+            continue
+        after = next((lt for lt in timed if lt.start_ms >= b_ms), timed[-1])  # type: ignore[operator]
+        lo, _, before = found.get(after.line_id, (a_ms, b_ms, after.start_ms >= b_ms))  # type: ignore[operator]
+        found[after.line_id] = (lo, b_ms, before)
+    issues: list[Issue] = []
+    for lid, (a_ms, b_ms, before) in found.items():
+        issues.append(Issue(code="uncovered_singing", severity="warning", line_id=lid,
+                            message=f"{'这一句之前' if before else '这一句之后'} {_fmt(a_ms)}–{_fmt(b_ms)} 有人在唱，但没有对应的歌词："
+                                    "可能是歌词里没写的部分（和声、即兴、重复段），也可能是相邻的句子被放错了位置，建议试听",
+                            data={"from_ms": int(a_ms), "to_ms": int(b_ms)}))
+    return issues
+
+
+def _fmt(ms: float) -> str:
+    s = ms / 1000
+    return f"{int(s // 60)}:{s % 60:04.1f}"
+
+
 def alignable(u: UnitTiming) -> bool:
     """Units without model tokens (``unaligned``: a っ at the end of a line, a character the model
     cannot spell) can never get a time; they are reported once when tokens are prepared and do not
@@ -250,7 +311,7 @@ def run_checks(units: list[UnitTiming], lines: list[LineTiming], cfg: CheckConfi
     cov_issues, cov = check_coverage(units, lines, cfg)
     issues = (check_units(units, cfg) + check_line_gaps(units, cfg) + check_rest(units, activity) + cov_issues
               + check_lines(lines, cfg, voices, audio_end_ms) + check_unit_order(units, voices)
-              + check_confidence(units))
+              + check_confidence(units) + check_uncovered(lines, activity))
     return issues, cov
 
 
