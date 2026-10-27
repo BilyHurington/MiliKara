@@ -353,9 +353,13 @@ def test_write_stem_flac_and_float_fallback(tmp_path):
 def test_cpu_only_separation_hides_the_gpu_without_breaking_torch(tmp_path):
     """"仅 CPU": the separator's child reports no GPU, and torch._dynamo (imported on the ONNX models'
     path, MDX-Net) still loads — it reads __wrapped__ from the functions the child replaces."""
+    import importlib.util
     import json
     import subprocess
     import sys
+
+    if importlib.util.find_spec("torch") is None:
+        pytest.skip("needs torch (the separation extras)")
 
     from kara_align.audio import separation as S
 
