@@ -463,11 +463,11 @@ def test_finished_jobs_are_forgotten_after_a_while(monkeypatch):
     jm = JobManager()
     done = jm.submit("t", lambda job: 1, heavy=False)
     for _ in range(200):
-        if done.status == "succeeded":
+        if done.finished_at is not None:  # set just after the status
             break
         time.sleep(0.01)
-    monkeypatch.setattr(J, "FINISHED_JOB_TTL_S", 0.0)
-    time.sleep(0.01)
+    # below zero: Windows' monotonic clock ticks every ~15 ms, no time may have passed since it finished
+    monkeypatch.setattr(J, "FINISHED_JOB_TTL_S", -1.0)
     jm.submit("t", lambda job: 2, heavy=False)
     assert jm.get(done.id) is None
     jm.shutdown()
