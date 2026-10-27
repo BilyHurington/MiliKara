@@ -2044,10 +2044,15 @@ def adopt_lines(h: ProjectHandle, result_id: str, line_ids: list[str], *, from_r
             source_units = cand.units
             line_ids = line_ids or [cand.line_id]
             label = f"candidate:{cand.label}"
+            from .align.runner import PLAIN_CHECK_LABEL
+
+            # the placement found without the lyrics' times: the line's LRC anchor and window no longer judge it
+            no_anchor = cand.label == PLAIN_CHECK_LABEL
         elif from_result_id:
             src = get_result(h, from_result_id)
             source_units = src.units
             label = f"result:{from_result_id}"
+            no_anchor = False
         else:
             raise ServiceError("需要 from_result_id 或 candidate_id")
         by_id = {u.unit_id: u for u in source_units if u.line_id in set(line_ids)}
@@ -2078,7 +2083,9 @@ def adopt_lines(h: ProjectHandle, result_id: str, line_ids: list[str], *, from_r
                 target.lines[i].start_ms = min(st) if st else None
                 target.lines[i].end_ms = max(en) if en else None
                 target.lines[i].candidate = label
-                if target.lines[i].anchor_ms is not None and target.lines[i].start_ms is not None:
+                if no_anchor:
+                    target.lines[i].anchor_residual_ms = target.lines[i].window_ms = None
+                elif target.lines[i].anchor_ms is not None and target.lines[i].start_ms is not None:
                     target.lines[i].anchor_residual_ms = target.lines[i].start_ms - target.lines[i].anchor_ms
         _recheck_adopted(h.project, target, list(line_ids), src_issues)
         target.stats["adoptions"] = target.stats.get("adoptions", 0) + adopted
@@ -2098,13 +2105,26 @@ def _recheck_adopted(p: Project, target: AlignmentResult, line_ids: list[str], s
     keep = []
     for i in target.issues:
         if i.line_id in ids and (i.code in chk.CHECK_CODES or i.code in ("unstable_boundary", "decode_failed",
-                                                                         "boundary_conflict", "tail_unresolved")):
+                                                                         "boundary_conflict", "tail_unresolved",
+                                                                         "mode_disagree")):
             continue
         if i.line_id in after and i.code in ("order_conflict", "line_overlap"):
             continue
         keep.append(i)
     keep += [i for i in src_issues if i.code in ("unstable_boundary", "unit_in_rest", "boundary_conflict",
                                                  "tail_unresolved")]
+    # singing a line is now placed over is no longer uncovered; the cross check is judged on the new times
+    keep = [i for i in keep if not (i.code == "uncovered_singing" and chk.uncovered_now_covered(i, target.lines))]
+    from .align.runner import PLAIN_CHECK_LABEL
+
+    plain = {c.line_id: c for c in target.candidates if c.label == PLAIN_CHECK_LABEL and c.line_id in ids}
+    for lid, c in plain.items():
+        lt = next((x for x in target.lines if x.line_id == lid), None)
+        st = [u.start_ms for u in c.units if u.start_ms is not None]
+        if lt is not None and lt.start_ms is not None and st:
+            again = chk.mode_disagree(lid, lt.start_ms, min(st), target.config.checks.cross_check_ms)
+            if again is not None:
+                keep.append(again)
     cfg = target.config.checks
     units = [u for u in target.units if u.line_id in ids]
     for u in units:

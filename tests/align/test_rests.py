@@ -219,3 +219,35 @@ def test_retry_ignores_residual_differences_within_anchor_noise():
     assert far.better_than(base, "L")
     warned = Scored(_O(0, "original"), [chk.Issue(code="short_unit", severity="warning", message="")], 1.0)
     assert not warned.better_than(base, "L")
+
+
+# ---------------------------------------------------------------- singing no line is over
+
+
+def _activity(singing: list[tuple[int, int]], total_ms: int = 60000):
+    """A vocal stem singing over these ms ranges, silent elsewhere."""
+    env = np.full(total_ms // 10, -70.0)
+    for a, b in singing:
+        env[a // 10:b // 10] = -15.0
+    return detect_activity(env, 10.0)
+
+
+def _lt(lid, a, b):
+    from kara_align.models import LineTiming
+    return LineTiming(line_id=lid, start_ms=a, end_ms=b)
+
+
+def test_singing_no_line_is_over_is_reported_on_the_line_after_it():
+    act = _activity([(1000, 4000), (8000, 12000), (12300, 14000), (20000, 23000), (30000, 31000), (40000, 44000)])
+    lines = [_lt("L1", 1000, 4000), _lt("L2", 20000, 23000), _lt("L3", 30000, 31000)]
+    found = chk.check_uncovered(lines, act)
+    # 8–14 s (a 0.3 s breath inside) before L2; 40–44 s after the last line, on it; L1 / L3 sung where they are
+    assert [i.line_id for i in found] == ["L2", "L3"]
+    for i, (a, b) in zip(found, ((8000, 14000), (40000, 44000))):  # (the activity is smoothed over 0.3 s)
+        assert abs(i.data["from_ms"] - a) <= 300 and abs(i.data["to_ms"] - b) <= 300
+    assert "这一句之前" in found[0].message and found[0].severity == "warning"
+    assert "最后一句之后" in found[1].message and found[1].severity == "info"  # an outro: only a note
+    # shorter than 2.5 s (a shout, a breath) or just past a line's end (its held note): nothing
+    assert not chk.check_uncovered([_lt("L1", 1000, 4000)], _activity([(1000, 4300), (9000, 10500)]))
+    # no vocal stem: nothing to go by
+    assert chk.check_uncovered(lines, None) == []

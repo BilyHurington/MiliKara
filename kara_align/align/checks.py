@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
+import numpy as np
+
 from ..models import CheckConfig, Issue, LineTiming, UnitTiming
 from .activity import VocalActivity
 
@@ -130,6 +132,92 @@ def check_rest(units: list[UnitTiming], activity: Optional[VocalActivity]) -> li
                                         f"演唱约 {activity.reference_db:.0f} dB）",
                                 data={"peak_db": round(activity.peak_db(u.start_ms, u.end_ms), 1)}))
     return issues
+
+
+# singing no lyric line is placed over (check_uncovered)
+UNCOVERED_MIN_MS = 2500  # at least this long
+UNCOVERED_REST = 0.25  # rest value at most this: clearly singing (see activity.py)
+UNCOVERED_BRIDGE_MS = 600  # dips shorter than this (a breath, a consonant) do not split it
+UNCOVERED_EDGE_MS = 400  # a line's own breath / held note just past its ends
+
+
+def check_uncovered(lines: list[LineTiming], activity: Optional[VocalActivity]) -> list[Issue]:
+    """Singing in the vocal stem that no lyric line is placed over (``lines`` in lyric order, all of
+    them): lyrics the song has but the text does not (a backing vocal, an ad-lib, a repeat written once),
+    or a line put somewhere else (two lines of the same text, one over the other's place).  Reported on
+    the line after it (a warning), singing after the last line on it (only a note: an outro); left out
+    next to a line that has no time (its own failure is reported).  A hint to listen, never a change."""
+    if activity is None or activity.rest.size == 0:
+        return []
+    timed = [lt for lt in lines if lt.start_ms is not None and lt.end_ms is not None]
+    if not timed:
+        return []
+    hop = activity.hop_ms
+    singing = activity.rest <= UNCOVERED_REST
+    covered = np.zeros(singing.size, dtype=bool)
+    for lt in timed:
+        a = max(0, int((lt.start_ms - UNCOVERED_EDGE_MS) / hop))  # type: ignore[operator]
+        b = min(covered.size, int(np.ceil((lt.end_ms + UNCOVERED_EDGE_MS) / hop)))  # type: ignore[operator]
+        covered[a:b] = True
+    # runs of uncovered singing, bridging short dips (never across a line)
+    runs: list[list[int]] = []
+    bridge = int(UNCOVERED_BRIDGE_MS / hop)
+    for i in np.flatnonzero(singing & ~covered):
+        if runs and i - runs[-1][1] <= bridge and not covered[runs[-1][1]:i].any():
+            runs[-1][1] = int(i)
+        else:
+            runs.append([int(i), int(i)])
+    pos = {lt.line_id: k for k, lt in enumerate(lines)}
+    found: dict[tuple[str, bool], list[tuple[float, float]]] = {}
+    for a, b in runs:
+        a_ms, b_ms = a * hop, (b + 1) * hop
+        if b_ms - a_ms < UNCOVERED_MIN_MS:
+            continue
+        nxt = next((lt for lt in sorted(timed, key=lambda x: x.start_ms) if lt.start_ms >= b_ms), None)  # type: ignore
+        prev = next((lt for lt in sorted(timed, key=lambda x: x.end_ms, reverse=True) if lt.end_ms <= a_ms), None)  # type: ignore
+        lo = pos[prev.line_id] + 1 if prev is not None else 0
+        hi = pos[nxt.line_id] if nxt is not None else len(lines)
+        if any(lt.start_ms is None for lt in lines[lo:hi]):
+            continue  # where a line that failed belongs
+        target = nxt or timed[-1]
+        found.setdefault((target.line_id, nxt is not None), []).append((a_ms, b_ms))
+    issues: list[Issue] = []
+    for (lid, before), spans in found.items():
+        where = "、".join(f"{_fmt(a)}–{_fmt(b)}" for a, b in spans[:3]) + ("等" if len(spans) > 3 else "")
+        if before:
+            text = (f"这一句之前 {where} 有人在唱，但没有对应的歌词：可能是歌词里没写的部分（和声、即兴、重复段），"
+                    "也可能是相邻的句子被放错了位置，建议试听")
+        else:
+            text = f"最后一句之后 {where} 还有人在唱（尾声、即兴或歌词里没写的部分）"
+        issues.append(Issue(code="uncovered_singing", severity="warning" if before else "info", line_id=lid,
+                            message=text, data={"spans_ms": [[int(a), int(b)] for a, b in spans],
+                                                "from_ms": int(spans[0][0]), "to_ms": int(spans[-1][1])}))
+    return issues
+
+
+def _fmt(ms: float) -> str:
+    t = int(round(ms / 100))  # tenths of a second
+    return f"{t // 600}:{(t % 600) / 10:04.1f}"
+
+
+def uncovered_now_covered(issue: Issue, lines: list[LineTiming]) -> bool:
+    """An uncovered_singing hint whose singing a line is placed over now (after adopting other times)."""
+    spans = issue.data.get("spans_ms") or [[issue.data.get("from_ms", 0), issue.data.get("to_ms", 0)]]
+    timed = [lt for lt in lines if lt.start_ms is not None and lt.end_ms is not None]
+    return all(any(lt.start_ms - UNCOVERED_EDGE_MS <= a and b <= lt.end_ms + UNCOVERED_EDGE_MS  # type: ignore[operator]
+                   or (lt.start_ms < b and a < lt.end_ms) for lt in timed) for a, b in spans)  # type: ignore[operator]
+
+
+def mode_disagree(line_id: str, start_ms: int, plain_start_ms: int, threshold_ms: int) -> Optional[Issue]:
+    """The LRC-mode cross check: a line placed ``threshold_ms`` or more from where the decode without the
+    lyrics' times puts it."""
+    d = plain_start_ms - start_ms
+    if threshold_ms <= 0 or abs(d) < threshold_ms:
+        return None
+    return Issue(code="mode_disagree", severity="warning", line_id=line_id,
+                 message=f"不用歌词时间对齐时，这一句{'早' if d < 0 else '晚'} {abs(d) / 1000:.1f} 秒；"
+                         "两种方法结果不一致，建议试听，可以在“候选”里采用另一种",
+                 data={"plain_start_ms": int(plain_start_ms), "diff_ms": int(d)})
 
 
 def alignable(u: UnitTiming) -> bool:

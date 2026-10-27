@@ -243,7 +243,18 @@ Every `url` returned for an exported file (mix, video, burn, task video, this li
 A local rerun (`align` with `line_ids`) creates a new partial result with `parent_result_id`; it never overwrites the parent.
 In plain mode it decodes only the stretch between the neighbouring lines' times in the previous result. The UI compares and adopts per line.
 
-`AlignmentResult.stats` includes `algorithm` (currently `"kara-align-decoder/3"`), `original_sha256` (the original recording the
+Two hints of a full run (never changing a time by themselves; not on local reruns). In LRC mode the main voice is decoded once
+more without the lyrics' times (`config.checks.cross_check_ms`, default 1000; 0 = off): a line placed that differently gets
+`mode_disagree` (warning, `data: {plain_start_ms, diff_ms}`) and that placement as a candidate labelled `普通模式（不用歌词时间）`
+(also, without the warning, for a line that failed); lines with times or an anchor set by hand are not checked; when more than
+5 lines and a quarter of those checked disagree, one `mode_disagree_many` note (info, no line) replaces them. Adopting the
+candidate drops the hint and the line's LRC anchor residual / window (adopting another one checks it again). With a vocal
+stem, singing of 2.5 s or more that no line is over (0.4 s around each line allowed; not next to a line without times) gives
+`uncovered_singing` on the line after it (warning; `data: {spans_ms, from_ms, to_ms}`), after the last line on it as info (an
+outro): lyrics the text lacks (a backing vocal, an ad-lib, a repeat written once) or a line placed elsewhere; adopting times
+that put a line over it drops it. Both warnings count among the simple-mode task's "建议检查".
+
+`AlignmentResult.stats` includes `algorithm` (currently `"kara-align-decoder/4"`), `original_sha256` (the original recording the
 times refer to) and `detail_revision`. Manual edits of the previous result are applied before the checks run; they are not
 carried to a different original (issue `manual_audio_changed`, the edits stay in the unit's `manual_history`), follow a reading
 change by position inside the segment (`manual_reading_changed`) or are reported as dropped (`manual_dropped`). A segment with
