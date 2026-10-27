@@ -293,8 +293,13 @@ Warnings say when the result is stale or partial and how many lines were skipped
 **Countdown** (开唱倒计时): `KaraokeStyle.countdown = {intro: true, interlude: true, min_gap_ms: 6000 (2000–30000), dots: 3 (2–5)}`:
 dots above the start of the first line (`intro`) and of a line after a pause of at least `min_gap_ms` since everything before it
 was sung (`interlude`); in the last `dots` seconds one goes each second (evenly over a shorter wait), the last as the line's sweep
-starts (so with `advance_ms`). A line can override the rules: `Line.countdown` true / false (null = the rules), set with
-`PATCH …/lines/{id}` `{countdown: "on"|"off"|"auto"}`. Such a line appears as its countdown begins (`dots` seconds before it is sung, not earlier with `early_show`), so the first dot goes a second after it appears. In the ASS the dots are
+starts (so with `advance_ms`). Line display (`KaraokeStyle.timing`): with `early_show` (default) a line appears as the
+line before it starts being sung, at the latest `lead_in_ms` (default 2000) before it is sung, and after an interlude
+(`countdown.min_gap_ms` or more since the line before) only `lead_in_ms` before it; a line stays `hold_ms` after it is
+sung but gives its row to the next line sooner when that one would otherwise get less than `lead_in_ms`, never sooner than
+max(200, `advance_ms` + 50) ms after it is sung (unless the lines are so close that the next one would not show 0.2 s
+before it is sung). Styles saved with `early_max_ms` load as before; the field is ignored. A line can override the rules: `Line.countdown` true / false (null = the rules), set with
+`PATCH …/lines/{id}` `{countdown: "on"|"off"|"auto"}`. Such a line appears as its countdown begins (`dots` seconds before it is sung, never earlier), so the first dot goes a second after it appears. In the ASS the dots are
 drawings with the style `KDots`. Simple-mode tasks: `task_style.countdown_intro` / `countdown_interlude` (null = as the style says).
 
 **Singers** (多人演唱): `KaraokeStyle.singers = {members: [{name, key, color, color_unsung, color_sung, outline_color, glow_unsung,

@@ -508,6 +508,22 @@ describe('colour template requests (F-M12)', () => {
     expect(latest.text.outline_color_sung).toBe('');  // the outline's own colour again: no second colour
   });
 
+  it('timing: the next line with the one before it; no cap on how early', async () => {
+    mockApi({ 'GET /api/karaoke/styles': () => [builtinSaved()] });
+    let latest: KaraokeStyle = plainStyle();
+    function Host() {
+      const [s, setS] = useState(latest);
+      latest = s;
+      return <StylePanel style={s} onChange={setS} fonts={[]} defaultFont="" defaultSection="timing" />;
+    }
+    renderUI(<Host />);
+    expect(screen.queryByText('最多提前')).toBeNull();
+    expect(screen.getByText(/唱这一句时就能看到下一句/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: '上一句开唱时就显示下一句' }));
+    expect(latest.timing.early_show).toBe(false);
+    expect(screen.getByText('每句在开唱前这么久出现')).toBeInTheDocument();
+  });
+
   it('symbols at the start / end of every line', async () => {
     mockApi({ 'GET /api/karaoke/styles': () => [builtinSaved()] });
     const base = plainStyle();

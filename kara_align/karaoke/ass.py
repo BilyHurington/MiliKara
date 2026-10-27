@@ -466,42 +466,60 @@ def countdown_dots(appear: float, t0: float, n: int) -> list[float]:
     return [t0 - i * step for i in range(n)]
 
 
+MIN_HOLD_MS = 200  # a line stays at least this long after it has been sung (see min_hold_ms)
+
+
+def min_hold_ms(style: KaraokeStyle) -> int:
+    """How long a line stays at least after it has been sung: the whole subtitles run ``advance_ms`` early,
+    so a line taken off right at its end would go before the singer has finished it."""
+    return max(MIN_HOLD_MS, style.timing.advance_ms + 50)
+
+
 def schedule(lines: list[LaidLine], style: KaraokeStyle) -> int:
     """Give each line a display window and a slot (rows stacked on screen); return how many
     lines had to go to an extra row.
 
     Lines take the rows in turn; a line with countdown dots takes the top row (when it is free) and
-    the turn goes on from there.  A line appears ``lead_in_ms`` before its first syllable
-    (with early show: as soon as its row is free, at most ``early_max_ms`` ahead), but never
-    before the previous line in its row has gone; that line's hold is cut short if needed so
-    each line is visible at least 0.2 s before it is sung.  A row whose line is still being
-    sung is never taken: the line goes to the row that frees first, and when every row is
-    busy (lines sung at the same time: a duet, a backing vocal inside a long line) to an
-    extra row beyond the block (above it at the bottom of the frame, below it at the top).
-    No line is ever dropped.
+    the turn goes on from there.  With early show a line appears as soon as the line before it starts
+    being sung (so the next line is there to read while this one is sung) and its row is free, at the
+    latest ``lead_in_ms`` before its own first syllable; after an interlude (``countdown.min_gap_ms`` or more since the line
+    before) only ``lead_in_ms`` before it, and a line with countdown dots as its countdown begins.
+    Without early show every line appears ``lead_in_ms`` before it is sung.  A line never appears
+    before the previous line in its row has gone: that line stays ``hold_ms`` after it has been sung,
+    but gives way sooner when waiting would leave this one less than ``lead_in_ms`` ahead – never
+    sooner than ``min_hold_ms`` after it has been sung (the subtitles run ``advance_ms`` early), unless
+    the lines are so close that this one would otherwise not be seen 0.2 s before it is sung, and never
+    before it has been sung.  A row whose line is still being sung is never taken: the line goes to the
+    row that frees first, and when every row is busy (lines sung at the same time: a duet, a backing
+    vocal inside a long line) to an extra row beyond the block (above it at the bottom of the frame,
+    below it at the top).  No line is ever dropped.
     """
     tm = style.timing
     n = max(1, style.layout.lines)
     lead, hold = max(0, tm.lead_in_ms), max(0, tm.hold_ms)
-    early = max(lead, tm.early_max_ms) if tm.early_show else lead
+    least = min_hold_ms(style)
+    interlude = style.countdown.min_gap_ms
     step = -1 if style.layout.position == "bottom" else 1  # extra rows go away from the frame edge
     last: dict[int, LaidLine] = {}
     turn = 0
     extra = 0
+    before: Optional[LaidLine] = None  # the line sung just before
     for ll in lines:
-        ll.show_to = ll.end + hold
-
-        # a line with countdown dots appears as its countdown begins (the first dot goes a second later),
-        # not earlier with the early show: the dots never sit still waiting
-        lead_ll = ll.countdown_ms or lead
-        early_ll = ll.countdown_ms or early
+        ll.show_to = ll.end + max(hold, least)
+        if ll.countdown_ms:
+            # as its countdown begins (the first dot goes a second later): the dots never sit still waiting
+            want = ll.start - ll.countdown_ms
+        elif not tm.early_show or before is None or ll.start - before.end >= interlude:
+            want = ll.start - lead  # the first line, after an interlude, or no early show
+        else:
+            want = min(before.start, ll.start - lead)  # with the line before
 
         def appear(slot: int) -> int:
             prev = last.get(slot)
-            free_at = prev.show_to if prev is not None else 0
-            t = max(0, ll.start - early_ll, min(free_at, ll.start - lead_ll))
+            t = max(0, want)
             if prev is not None and prev.show_to > t:
-                t = max(t, min(prev.show_to, max(prev.end, ll.start - 200)))
+                floor = max(prev.end, min(prev.end + least, ll.start - 200))
+                t = max(t, min(prev.show_to, max(floor, ll.start - lead)))
             return t
 
         free = [s for s in range(n) if s not in last or last[s].end <= ll.start]
@@ -529,6 +547,7 @@ def schedule(lines: list[LaidLine], style: KaraokeStyle) -> int:
         last[slot] = ll
         if 0 <= slot < n:
             turn = slot + 1
+        before = ll
     return extra
 
 
@@ -537,8 +556,8 @@ def visible_spans(ll: LaidLine, style: KaraokeStyle) -> list[tuple[int, int]]:
 
     Normally one interval.  If the line itself contains a long pause (the
     singer stops mid-line for an interlude), the line is hidden during it:
-    it stays ``hold_ms`` after the last sung part before the pause and comes
-    back ``lead_in_ms`` before singing resumes.
+    it stays ``hold_ms`` (at least ``min_hold_ms``) after the last sung part before the pause and
+    comes back ``lead_in_ms`` before singing resumes.
     """
     tm = style.timing
     min_pause = max(PAUSE_HIDE_MS, tm.hold_ms + tm.lead_in_ms + 2000)
@@ -549,7 +568,7 @@ def visible_spans(ll: LaidLine, style: KaraokeStyle) -> list[tuple[int, int]]:
     reach: Optional[int] = None
     for s, e in sorted(times):
         if reach is not None and s - reach >= min_pause:
-            spans.append((a, reach + tm.hold_ms))
+            spans.append((a, reach + max(tm.hold_ms, min_hold_ms(style))))
             a = s - tm.lead_in_ms
         reach = e if reach is None else max(reach, e)
     spans.append((a, ll.show_to))

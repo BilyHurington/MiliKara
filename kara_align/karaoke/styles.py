@@ -24,7 +24,7 @@ _DEFAULT: dict = {
     "layout": {"margin_v": 40, "line_spacing": 0, "margin_h": 240},
     "text": {"color_sung": "#ED35B3"},
     "ruby": {"script": "romaji", "target": "all"},
-    "timing": {"lead_in_ms": 4000, "hold_ms": 2000, "early_max_ms": 6000},
+    "timing": {"lead_in_ms": 4000, "hold_ms": 2000},
 }
 
 WARM_ID = "warm"
