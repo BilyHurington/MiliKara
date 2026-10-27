@@ -446,7 +446,7 @@ def test_styles_are_validated_and_stored_ones_clamped(tmp_path):
     assert "," not in st.text.font and "{" not in st.text.font and "\\" not in st.text.font
     assert (st.glow.color_unsung, st.glow.blur, st.glow.strength) == ("#FF8AC2", 7.0, 10)
     assert (st.layout.margin_h, st.layout.line_spacing, st.layout.lines) == (600, 0, 3)
-    assert (st.timing.hold_ms, st.timing.lead_in_ms, st.timing.highlight) == (0, 1000, "sweep")
+    assert (st.timing.hold_ms, st.timing.lead_in_ms, st.timing.highlight) == (0, 2000, "sweep")
     assert st.info.fields == ["title"] and st.info.accent == "" and st.theme is None
     assert st.ruby == KaraokeStyle().ruby
     # a style sent to be saved is refused instead

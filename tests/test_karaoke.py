@@ -142,14 +142,56 @@ def _laid(starts):
 
 def test_schedule_two_slots_early_show_without_overlap():
     st = KaraokeStyle()
-    lines = _laid([10000, 13000, 16000, 19000])
+    st.timing.hold_ms = 2000
+    lines = _laid([10000, 13000, 16000, 19000])  # each sung 2 s, 1 s apart
     A.schedule(lines, st)
     assert [ll.slot for ll in lines] == [0, 1, 0, 1]
-    assert lines[1].show_from == 13000 - 4000  # slot free: shown early (capped at 4 s)
+    # with the line before it; the line two before (same row) first stays its 2 s hold while that still
+    # leaves lead_in_ms (2 s) ahead
+    assert [ll.show_from for ll in lines] == [10000 - 2000, 10000, 14000, 17000]
     for a, b in ((lines[0], lines[2]), (lines[1], lines[3])):
         assert a.show_to <= b.show_from  # same slot never overlaps
-    for ll in lines:
-        assert ll.start - ll.show_from >= 200
+        assert a.show_to >= a.end + 200  # gone at the earliest 0.2 s after it was sung
+
+
+def test_schedule_a_long_hold_gives_way_to_the_next_line():
+    """A line held long after it is sung does not keep the next one in its row waiting: that one still
+    appears lead_in_ms ahead (THE 愛 with the built-in 4 s / 2 s timing showed lines 0.9 s ahead)."""
+    st = KaraokeStyle()
+    st.timing.lead_in_ms, st.timing.hold_ms = 4000, 2000
+    lines = _laid([10000, 12500, 15000, 17500])  # 2 s each, 0.5 s apart: every row busy until just before
+    A.schedule(lines, st)
+    assert lines[2].show_from == lines[0].end + 200  # the line two before: off 0.2 s after it was sung
+    assert lines[2].start - lines[2].show_from == 2800  # instead of 0.5 s with the whole 2 s hold
+    assert lines[0].show_to == lines[2].show_from
+
+
+def test_schedule_after_an_interlude_only_lead_in_ahead():
+    st = KaraokeStyle()
+    st.countdown.interlude = False
+    lines = _laid([10000, 13000, 40000])  # 25 s after the line before: an interlude
+    A.schedule(lines, st)
+    assert lines[1].show_from == 10000
+    assert lines[2].show_from == 40000 - st.timing.lead_in_ms
+
+
+def test_schedule_lines_too_close_for_the_least_hold():
+    """Lines so close that the one two before cannot stay 0.2 s: this one is still seen 0.2 s ahead, and
+    the other one is never taken off before it has been sung."""
+    st = KaraokeStyle()
+    lines = [A.LaidLine(line=Line(text=str(s)), chunks=[], start=s, end=e)
+             for s, e in ((10000, 11000), (11000, 11250), (11300, 12000))]
+    A.schedule(lines, st)
+    assert lines[2].slot == 0 and lines[2].show_from == 11100  # 0.2 s before it is sung
+    assert lines[0].show_to == 11100 >= lines[0].end
+
+
+def test_schedule_the_least_hold_follows_the_advance():
+    st = KaraokeStyle()
+    st.timing.advance_ms = 400
+    assert A.min_hold_ms(st) == 450
+    st.timing.advance_ms = 0
+    assert A.min_hold_ms(st) == 200
 
 
 def test_schedule_without_early_show_uses_lead_in():
@@ -370,9 +412,9 @@ def test_ass_hides_line_across_interlude(tmp_path):
     text, warnings = S.karaoke_ass(h)
     assert any("停顿" in w for w in warnings)
     ruby = [l for l in text.splitlines() if l.startswith("Dialogue") and ",KRuby," in l and "さ" in l]
-    assert [l.split(",")[1:3] for l in ruby] == [["0:00:00.00", "0:00:03.20"], ["0:00:39.00", "0:00:40.80"]]
+    assert [l.split(",")[1:3] for l in ruby] == [["0:00:00.00", "0:00:03.20"], ["0:00:38.00", "0:00:40.80"]]
     # the second event starts with the earlier syllables already sung
-    assert ruby[1].endswith("{\\kf0}さ{\\kf0}く{\\k100}{\\kf30}ら")
+    assert ruby[1].endswith("{\\kf0}さ{\\kf0}く{\\k200}{\\kf30}ら")
 
 
 def test_burn_reduced_vocals_uses_its_own_level(tmp_path, monkeypatch):

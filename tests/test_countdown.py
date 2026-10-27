@@ -55,12 +55,13 @@ def test_dots_in_the_subtitles(tmp_path):
 
 
 def test_a_line_with_a_countdown_appears_as_its_countdown_begins():
-    st = KaraokeStyle()  # early show on: other lines appear up to 4 s ahead
+    st = KaraokeStyle()  # early show on: other lines appear as the line before them starts
     laid = _laid((10000, 12000), (30000, 32000), (33000, 34000))
     A.plan_countdowns(laid, st)
     A.schedule(laid, st)
-    # the countdown lines exactly 3 s ahead (3 dots, the first goes a second later), the other as before
-    assert [ll.start - ll.show_from for ll in laid] == [3000, 3000, 4000]
+    # the countdown lines exactly 3 s ahead (3 dots, the first goes a second later), the other with the
+    # line before it (which starts 3 s before it)
+    assert [ll.start - ll.show_from for ll in laid] == [3000, 3000, 3000]
     assert A.countdown_dots(laid[0].show_from, laid[0].start, 3) == [10000, 9000, 8000]
     st.timing.early_show, st.timing.lead_in_ms, st.countdown.dots = False, 1000, 5
     A.plan_countdowns(laid, st)

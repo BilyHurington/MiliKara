@@ -74,7 +74,7 @@ def test_simple_mode_default_subtitle_style_and_reset():
     assert (k.preset, k.text.color_sung, k.glow.enabled, k.ruby.script, k.ruby.target) == \
         ("暖阳", "#FF8A1E", True, "romaji", "all")
     assert (k.layout.margin_v, k.layout.line_spacing, k.layout.margin_h) == (40, 0, 240)
-    assert (k.timing.lead_in_ms, k.timing.hold_ms, k.timing.early_max_ms) == (4000, 2000, 6000)
+    assert (k.timing.lead_in_ms, k.timing.hold_ms) == (4000, 2000)
     AS.update({"simple": {"karaoke": {"timing": {"hold_ms": 800}}}})  # nested partial update keeps the rest
     k2 = AS.load().simple.karaoke
     assert k2.timing.hold_ms == 800 and k2.timing.lead_in_ms == 4000 and k2.ruby.script == "romaji"

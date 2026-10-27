@@ -407,18 +407,16 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
 
         <Section {...sec('timing')} icon={<Timer className="size-4" />} title="时间"
           summary={`提前 ${M.lead_in_ms / 1000}s · 停留 ${M.hold_ms / 1000}s · 淡入淡出 ${M.fade_in_ms}/${M.fade_out_ms}ms${M.advance_ms ? ` · 扫光提前 ${M.advance_ms}ms` : ''}${C.intro || C.interlude ? ` · 倒计时${C.intro && C.interlude ? '' : C.intro ? '（开头）' : '（间奏后）'}` : ''}`}>
-          <Row label="提前出现" hint="歌词至少在开唱前这么久出现">
+          <Row label="提前出现" hint={M.early_show ? '每句至少在开唱前这么久出现（间奏后就是这么久；连续很短的句子在位置空出时出现）' : '每句在开唱前这么久出现'}>
             <Num name="提前出现" unit="ms" value={M.lead_in_ms} max={8000} step={100} onChange={(v) => patch((s) => { s.timing.lead_in_ms = v; })} />
           </Row>
-          <Row label="唱完后停留"><Num name="唱完后停留" unit="ms" value={M.hold_ms} max={5000} step={100} onChange={(v) => patch((s) => { s.timing.hold_ms = v; })} /></Row>
+          <Row label="唱完后停留" hint="下一句需要这个位置时会提前让出，但至少停留 0.2 秒（歌词提前显示时再多一点），不会还没唱完就消失">
+            <Num name="唱完后停留" unit="ms" value={M.hold_ms} max={5000} step={100} onChange={(v) => patch((s) => { s.timing.hold_ms = v; })} />
+          </Row>
           <Row label="淡入（缓进）"><Num name="淡入" unit="ms" value={M.fade_in_ms} max={1500} step={50} onChange={(v) => patch((s) => { s.timing.fade_in_ms = v; })} /></Row>
           <Row label="淡出（缓出）"><Num name="淡出" unit="ms" value={M.fade_out_ms} max={1500} step={50} onChange={(v) => patch((s) => { s.timing.fade_out_ms = v; })} /></Row>
-          <Switch checked={M.early_show} onChange={(v) => patch((s) => { s.timing.early_show = v; })} label="位置空出后尽早显示下一行" />
-          {M.early_show && (
-            <Row label="最多提前" hint="长间奏时不会过早出现">
-              <Num name="最多提前" unit="ms" value={M.early_max_ms} min={1000} max={10000} step={500} onChange={(v) => patch((s) => { s.timing.early_max_ms = v; })} />
-            </Row>
-          )}
+          <Switch checked={M.early_show} onChange={(v) => patch((s) => { s.timing.early_show = v; })} label="上一句开唱时就显示下一句" />
+          {M.early_show && <p className="-mt-2 text-xs text-muted">唱这一句时就能看到下一句；长间奏后（停顿达到倒计时里“停顿多久算间奏”）只按“提前出现”提前。</p>}
           <Switch checked={M.advance_ms > 0} onChange={(v) => patch((s) => { s.timing.advance_ms = v ? 150 : 0; })} label="歌词提前显示（扫光比实际演唱早一点）" />
           {M.advance_ms > 0 && (
             <Row label="提前多少" hint="一般 100–200 ms 看起来更跟手；同样作用于导出的 LRC（alignment.json / CSV 保持原始时间）">

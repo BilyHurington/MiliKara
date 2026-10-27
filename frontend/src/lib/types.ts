@@ -274,7 +274,7 @@ export interface KaraokeStyle {
   };
   glow: { enabled: boolean; color_unsung: string; color_sung: string; size: number; blur: number; strength: number; ruby: boolean };
   timing: {
-    lead_in_ms: number; hold_ms: number; highlight: 'sweep' | 'instant'; early_show: boolean; early_max_ms: number;
+    lead_in_ms: number; hold_ms: number; highlight: 'sweep' | 'instant'; early_show: boolean;
     advance_ms: number; fade_in_ms: number; fade_out_ms: number;
   };
   /** effects around the lyrics, fired by each syllable as it is sung */

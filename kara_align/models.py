@@ -839,11 +839,12 @@ class KaraokeLayout(_KaraokeBase):
 
 
 class KaraokeTiming(_KaraokeBase):
-    lead_in_ms: int = Field(default=1000, ge=0, le=8000)  # line appears at least this long before its first syllable
-    hold_ms: int = Field(default=500, ge=0, le=5000)  # and stays after its last one
-    # show the next line as soon as its slot is free (at most early_max_ms ahead)
+    # a line appears at least this long before its first syllable (when its row is free by then)
+    lead_in_ms: int = Field(default=2000, ge=0, le=8000)
+    hold_ms: int = Field(default=500, ge=0, le=5000)  # and stays after its last one (shorter when the row is needed)
+    # the next line appears as the line before it starts being sung (after an interlude: lead_in_ms ahead);
+    # off: every line lead_in_ms ahead.  (``early_max_ms`` of older styles is ignored.)
     early_show: bool = True
-    early_max_ms: int = Field(default=4000, ge=1000, le=10000)
     highlight: Literal["sweep", "instant"] = "sweep"  # \kf or \k
     # show (and highlight) the lyrics this much before they are sung; 0 = off.  On by default: a
     # syllable's sweep runs over its whole length, so it only looks "sung" about half-way through
