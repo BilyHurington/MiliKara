@@ -11,10 +11,14 @@ from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
 from ..models import Line, LyricsDoc, Segment, Unit
-from . import chinese, english, japanese
+from . import cantonese, chinese, english, japanese
 from .japanese import is_kana_text, keeps_katakana, split_morae, to_hiragana
 
 PROTECTED_SOURCES = ("manual", "ai")
+# the languages a lyric's reading can come from (en and other have no reading of their own)
+READING_LANGS = ("ja", "zh", "yue")
+# languages a lyric can be sung in, as the user reads them in a warning
+LANG_NAMES = {"zh": "中文", "yue": "粤语", "en": "英文", "ja": "日语", "other": "其他语言"}
 
 
 def detect_lang(text: str, hint: Optional[str] = None) -> str:
@@ -22,15 +26,17 @@ def detect_lang(text: str, hint: Optional[str] = None) -> str:
         return "ja"
     has_han = any(japanese.is_kanji(c) for c in text)
     if has_han:
-        return hint if hint in ("ja", "zh") else "ja"
+        return hint if hint in READING_LANGS else "ja"
     if re.search(r"[A-Za-z]", text):
-        return "en" if hint not in ("ja", "zh") else hint
+        return "en" if hint not in READING_LANGS else hint
     return hint or "other"
 
 
 def rule_segments_for(text: str, lang: str) -> list[Segment]:
     if lang == "zh":
         return chinese.rule_segments(text)
+    if lang == "yue":
+        return cantonese.rule_segments(text)
     if lang == "en":
         return english.rule_segments(text)
     return japanese.rule_segments(text)
@@ -93,7 +99,7 @@ def _refresh_unprotected(line: Line, lang_hint: Optional[str]) -> None:
         if _is_protected(seg) or seg.reading_source not in ("rule", "none"):
             out.append(seg)
             continue
-        fresh = rule_segments_for(seg.surface, seg.lang if seg.lang in ("ja", "zh", "en") else lang)
+        fresh = rule_segments_for(seg.surface, seg.lang if seg.lang in READING_LANGS else lang)
         _reuse_ids([seg], fresh)
         out.extend(fresh)
     line.segments = out
@@ -199,6 +205,24 @@ def _reuse_ids(old: Sequence[Segment], new: Sequence[Segment]) -> None:
             s.id = o.id
             for nu, ou in zip(s.units, o.units):
                 nu.id = ou.id
+
+
+def set_doc_language(doc: LyricsDoc, lang: str) -> int:
+    """Point the document at another language; the next :func:`prepare_doc` re-derives rule readings.
+
+    Rule segments carry the language they were read in, and ``_refresh_unprotected`` trusts it, so
+    it is rewritten here — otherwise switching zh→yue would keep the pinyin segments forever.
+    Manual / AI / confirmed readings are the user's and are never touched.  Returns the number of
+    segments relabelled.
+    """
+    doc.language = lang
+    changed = 0
+    for ln in doc.sung_lines():
+        for seg in ln.segments:
+            if not _is_protected(seg) and seg.lang in READING_LANGS and seg.lang != lang:
+                seg.lang = lang  # type: ignore[assignment]
+                changed += 1
+    return changed
 
 
 def prepare_doc(doc: LyricsDoc, *, overwrite_rule: bool = True) -> PrepareReport:
@@ -324,6 +348,12 @@ def resegment_line(line: Line, segments_spec: Sequence[dict]) -> Line:
     return line
 
 
+def unsupported_languages(doc: LyricsDoc, backend_langs: Sequence[str]) -> list[str]:
+    """The languages the document sings in that the acoustic model does not cover."""
+    langs = set(backend_langs)
+    return sorted({s.lang for ln in doc.sung_lines() for s in ln.segments if s.units and s.lang not in langs})
+
+
 def capability_warnings(doc: LyricsDoc, backend_langs: Sequence[str]) -> list[str]:
     """Warn when segments use languages the acoustic model does not cover."""
     langs = set(backend_langs)
@@ -336,7 +366,7 @@ def capability_warnings(doc: LyricsDoc, backend_langs: Sequence[str]) -> list[st
             if not s.units and s.surface.strip() and s.uncertain:
                 missing.append(f"{ln.id}:{s.surface}")
     msgs = []
-    names = {"zh": "中文", "en": "英文", "ja": "日语", "other": "其他语言"}
+    names = LANG_NAMES
     for lang, n in sorted(counts.items()):
         msgs.append(f"{n} 个{names.get(lang, lang)}片段不在当前模型支持的语言内（{', '.join(sorted(langs))}），"
                     f"将按固定转写送入模型，结果可能不可靠；不会强制日语化")

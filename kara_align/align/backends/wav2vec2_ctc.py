@@ -276,3 +276,16 @@ class MMSJapaneseBackend(Wav2Vec2CTCBackend):
     default_license = DEFAULT_LICENSE
     languages = ("ja",)
     profile = "ja-hepburn"
+
+
+class MMSSinophoneBackend(MMSJapaneseBackend):
+    """The same Japanese model, fed Chinese / Cantonese through a mora proxy.
+
+    The CTC head only knows a-z, so pinyin / Jyutping letters are rewritten as the
+    Japanese mora spelling of that syllable (see ``kara_align.reading.proxy``) and the
+    ``mixed-mora`` profile does the rewriting.  Same weights, different reading.
+    """
+
+    name = "mms-mixed"
+    languages = ("ja", "zh", "yue", "en")
+    profile = "mixed-mora"

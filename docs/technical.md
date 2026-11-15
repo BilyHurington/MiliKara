@@ -86,6 +86,32 @@ milikara serve --allow-host 192.168.1.20      # 另外接受这个主机名的�
 - 尾音：关闭（默认）／保守裁短／基于人声能量的有限修正，记录原值、方法与原因，不覆盖人工锁。
 - 人声混音：`mix = master × (p/100·V + q/100·I)`，防削波使用可见的共同母线增益，试听与导出同一规则。
 
+## 中文与粤语
+
+歌词语言 `LyricsDoc.language`（`ja` / `zh` / `yue` / `en` / `other`）决定注音规则，也决定默认后端。
+
+- **识别**：有假名即日语；有汉字时，含粤语口语字（嘅 咗 喺 唔 冇 佢 哋 啲 嚟 睇 咁 乜 嗰 噉）即粤语，否则中文。用标准书面语唱的粤语歌（如《狮子山下》）没有这些口语字，程序认不出，需要手动改：读音页的“歌词语言”下拉框（`PUT /api/projects/<id>/lyrics/language`）。改语言后规则读音按新语言重新生成，人工 / AI / 确认过的读音不动（`reading.prepare.set_doc_language` 只改未被保护的片段的 `lang`，下一次 `prepare_doc` 才会重算，否则 `_refresh_unprotected` 会一直相信旧的 `seg.lang`）。
+- **注音**：中文和粤语都是一个汉字一个 unit，reading 是不带声调的拼音 / 粤拼（我 ngo、香 hoeng、咗 zo）。粤拼来自 ToJyutping（`pip install 'milikara[yue]'`，自带词典、不联网；离线包已经带上），没装时退到 pycantonese，两者都没有就用拼音兜底并在诊断里说明。声调数字必须去掉：CTC 词表只有 a–z，`hoeng2` 的 2 会变成不存在的 token。
+- **送进模型**：`NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn` 的词表是 a–z，多字母的拼音串（`xiang`、`zoeng`）它拼不出来。转写层 `kara_align/reading/proxy.py` 把每个音节改写成日语拍的拼法：我 wo→`o`、想 xiang→`shan`、光 guang→`gan`、唔 m→`mu`、香 hoeng→`hen`、佢 keoi→`kui`；`is_mora_text()` 检查结果确实能拆成日语拍（粤语的塞音韵尾 -p/-t/-k 没有对应拍，保留为单独的字母）。profile `mixed-mora` 只改写 zh / yue 单元，日语行仍走 `ja-hepburn`（促音、长音规则不变），所以一行里 ja / zh / yue / en 可以混排。
+- **后端**：`mms-mixed` 与 `mms-ja` 是同一份权重、同一个 revision，只是 profile 不同、声明支持 ja/zh/yue/en。歌词是中文 / 粤语而后端还是没人动过的默认值时，`service.apply_lyrics` 会自动切到 `mms-mixed` 并提示（`_auto_backend_for`）；用户自己选过后端或填了 `model_id` 就不再自动改。
+- **代价**：转写丢掉声调、丢掉部分韵尾，`zoeng` 这样的音节被压成一两拍，所以中文 / 粤语的单元时长不能按日语的 `CheckConfig.min_unit_ms=40` 判断；一个汉字唱几个音（日语有 `ー` + `apply_holds`，中文没有对应物）仍然只能靠人工改时间；模型本身没听过中文，质量明显不如日语，这是这条路线的上限。
+- **校准**：`auto_calibrate` 在歌词含当前后端不支持的语言时把 `confident` 置为 false 并说明原因 —— 听不到这门语言的模型给出的句首时间是系统性偏差，不是整体偏移，按它平移会让整首歌错开。此时请换 `mms-mixed` 或手动校准。
+
+实测（本地一次性评估，没有随仓库附歌曲）：把增强 LRC 里的逐字时间当作真值，只把行时间喂给对齐（普通 LRC），再比每个字亮起的时间。三首歌的歌词分别是粤语 302 字、国语 431 字、国语 433 字：
+
+| 歌曲 | 配置 | 中位误差 | ≤100 ms | ≤200 ms | 最大 |
+| --- | --- | --- | --- | --- | --- |
+| 粤语 | mms-ja · 拼音读音（v1.3.0 的行为） | 125 ms | 38.7 % | 71.9 % | 4072 ms |
+| 粤语 | mms-ja · 粤拼读音 · 原字母 | 116 ms | 43.4 % | 80.8 % | 864 ms |
+| 粤语 | mms-mixed · 粤拼读音 · 拍转写 | 106 ms | 47.0 % | 86.4 % | 946 ms |
+| 粤语 | mms-mixed · 拼音读音 · 拍转写 | 143 ms | 35.1 % | 65.2 % | 3889 ms |
+| 国语一 | mms-ja · 拼音读音 | 200 ms | 14.4 % | 50.1 % | 11374 ms |
+| 国语一 | mms-mixed · 拼音读音 · 拍转写 | 222 ms | 12.3 % | 42.9 % | 11424 ms |
+| 国语二 | mms-ja · 拼音读音 | 74 ms | 61.7 % | 90.3 % | 4410 ms |
+| 国语二 | mms-mixed · 拼音读音 · 拍转写 | 75 ms | 65.4 % | 92.1 % | 4430 ms |
+
+结论：粤语歌的最大收益来自“读音换成粤拼”（4 秒级的错行消失，≤200 ms 从 72 % 到 81 %），拍转写再补上一点（→ 86 %）；国语歌两者持平，真正的瓶颈是模型本身没学过国语，这是下一步换模型（MMS_FA / 中文训练的 CTC）的理由。判别不出粤语的歌（用标准书面语写的粤语歌）一定要手动切“粤语”，否则走的是表里第一行。
+
 ## 离线版的更新
 
 `packaging/updater/update.py` 是更新程序（只用标准库）；打包时 `packaging/updater/build.py package` 在它前面加一行启动命令，生成 `更新.bat`（一行 cmd，Python 用 `-x` 跳过）和 `更新.command`（sh 行藏在 Python 字符串里），用文件夹里自带的 Python 运行，并写入 `version.json`（版本、平台、Windows 的版本、组件）。这两个文件不在仓库里，只在离线包和 Release 里。Windows 离线包有三个版本：CPU、NVIDIA（CUDA）和 AMD 显卡（ROCm，torch 来自 AMD 的软件源，包含 `windows-package.yml` 里 `ROCM_DEVICES` 列出的显卡系列）；没有 `version.json` 的旧文件夹按 torch 的版本号（`+cu…`、`+rocm…`）区分，更新时换上对应版本的使用说明。

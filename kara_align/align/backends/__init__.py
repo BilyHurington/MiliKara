@@ -12,7 +12,7 @@ from typing import Any, Callable
 from ...models import AlignConfig
 from .fake import ScriptedBackend
 from .wav2vec2_ctc import (DEFAULT_LICENSE, DEFAULT_MODEL_ID, DEFAULT_REVISION, ML_HINT,
-                           MMSJapaneseBackend, Wav2Vec2CTCBackend)
+                           MMSJapaneseBackend, MMSSinophoneBackend, Wav2Vec2CTCBackend)
 
 
 def _ml_available() -> bool:
@@ -38,8 +38,17 @@ BACKENDS: dict[str, dict[str, Any]] = {
         "license": DEFAULT_LICENSE,
         "requires": ["torch", "transformers"],
     },
-    "wav2vec2-ctc": {
-        "factory": _make_hf(Wav2Vec2CTCBackend),
+    "mms-mixed": {
+        "factory": _make_hf(MMSSinophoneBackend),
+        "description": "Same Japanese karaoke model, reading Chinese/Cantonese syllables as Japanese morae "
+                       "(mixed cn/粤/ja/en lyrics; approximate, cannot hear tones)",
+        "languages": ["ja", "zh", "yue", "en"],
+        "default_model": DEFAULT_MODEL_ID,
+        "default_revision": DEFAULT_REVISION,
+        "license": DEFAULT_LICENSE,
+        "requires": ["torch", "transformers"],
+    },
+    "wav2vec2-ctc": {        "factory": _make_hf(Wav2Vec2CTCBackend),
         "description": "Any compatible Hugging Face Wav2Vec2ForCTC character model (set model_id)",
         "languages": ["ja"],
         "default_model": None,

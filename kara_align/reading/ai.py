@@ -98,6 +98,8 @@ def build_prompt(doc: LyricsDoc, line_ids: Optional[Sequence[str]] = None, lang:
     lang_note = {
         "ja": "歌词为日语。reading 一般使用平假名（外来语也写平假名），units 按拍（mora）切分：拗音（きゃ）合为一拍，促音っ、拨音ん、长音ー各自单独一拍。",
         "zh": "歌词为中文。reading 使用不带声调的拼音，每个汉字一个 unit。",
+        "yue": "歌词为粤语（Cantonese）。reading 使用不带声调的粤拼（Jyutping，如 我＝ngo、香＝hoeng、咗＝zo），"
+               "每个汉字一个 unit；粤语的口语字（唔、係、嘅、咗、喺…）按粤语读音注音，不要按普通话读。",
         "en": "Lyrics are English. reading is the lowercase word, one unit per word.",
     }.get(lang, "")
     rules = [

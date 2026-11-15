@@ -112,6 +112,17 @@ def _encoder() -> str:
         return f"?（{e}）"
 
 
+def _jyutping() -> str:
+    """Which Jyutping dictionary Cantonese lyrics will use (see kara_align.reading.cantonese)."""
+    try:
+        from .reading import cantonese
+
+        src = cantonese.source()
+        return src or "未安装（粤语读音会退回拼音）· pip install 'milikara[yue]'"
+    except Exception as e:  # a broken install must not break the whole report
+        return f"读取失败（{e}）"
+
+
 def report(task: Optional[dict] = None, job: Optional[dict] = None) -> str:
     from . import settings as app_settings
     from . import updates
@@ -124,6 +135,7 @@ def report(task: Optional[dict] = None, job: Optional[dict] = None) -> str:
         f"torch：{_torch()}",
         f"ffmpeg：{_ffmpeg()}",
         f"视频编码：{_encoder()}",
+        f"粤语注音：{_jyutping()}",
     ]
     try:
         s = app_settings.load()
