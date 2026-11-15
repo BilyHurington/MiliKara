@@ -37,6 +37,16 @@ separation = [
     "audio-separator[cpu]>=0.30.2,<0.31",
     "audioread>=3.0",
 ]
+# Cantonese readings (Jyutping dictionary, bundled, no download); without either of them the
+# Jyutping reader falls back to pinyin and says so.
+yue = [
+    "ToJyutping>=3.2",
+]
+# MMS_FA acoustic backend (onnxruntime instead of torch; the weights download on first use)
+fa = [
+    "onnxruntime>=1.20",
+    "huggingface-hub>=0.23",
+]
 dev = [
     "pytest>=8",
 ]

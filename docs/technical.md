@@ -86,6 +86,34 @@ milikara serve --allow-host 192.168.1.20      # 另外接受这个主机名的�
 - 尾音：关闭（默认）／保守裁短／基于人声能量的有限修正，记录原值、方法与原因，不覆盖人工锁。
 - 人声混音：`mix = master × (p/100·V + q/100·I)`，防削波使用可见的共同母线增益，试听与导出同一规则。
 
+## 中文与粤语
+
+歌词语言 `LyricsDoc.language`（`ja` / `zh` / `yue` / `en` / `other`）决定注音规则，也决定默认后端。
+
+- **识别**：有假名即日语；有汉字时，含粤语口语字（嘅 咗 喺 唔 冇 佢 哋 啲 嚟 睇 咁 乜 嗰 噉）即粤语，否则中文。用标准书面语唱的粤语歌（如《狮子山下》）没有这些口语字，程序认不出，需要手动改：读音页的“歌词语言”下拉框（`PUT /api/projects/<id>/lyrics/language`）。改语言后规则读音按新语言重新生成，人工 / AI / 确认过的读音不动（`reading.prepare.set_doc_language` 只改未被保护的片段的 `lang`，下一次 `prepare_doc` 才会重算，否则 `_refresh_unprotected` 会一直相信旧的 `seg.lang`）。
+- **注音**：中文和粤语都是一个汉字一个 unit，reading 是不带声调的拼音 / 粤拼（我 ngo、香 hoeng、咗 zo）。粤拼来自 ToJyutping（`pip install 'milikara[yue]'`，自带词典、不联网；离线包已经带上），没装时退到 pycantonese，两者都没有就用拼音兜底并在诊断里说明。声调数字必须去掉：CTC 词表只有 a–z，`hoeng2` 的 2 会变成不存在的 token。
+- **送进模型**：`NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn` 的词表是 a–z，多字母的拼音串（`xiang`、`zoeng`）它拼不出来。转写层 `kara_align/reading/proxy.py` 把每个音节改写成日语拍的拼法：我 wo→`o`、想 xiang→`shan`、光 guang→`gan`、唔 m→`mu`、香 hoeng→`hen`、佢 keoi→`kui`；`is_mora_text()` 检查结果确实能拆成日语拍（粤语的塞音韵尾 -p/-t/-k 没有对应拍，保留为单独的字母）。profile `mixed-mora` 只改写 zh / yue 单元，日语行仍走 `ja-hepburn`（促音、长音规则不变），所以一行里 ja / zh / yue / en 可以混排。
+- **后端**：`mms-mixed` 与 `mms-ja` 是同一份权重、同一个 revision，只是 profile 不同、声明支持 ja/zh/yue/en。歌词是中文 / 粤语而后端还是没人动过的默认值时，`service.apply_lyrics` 会自动切到 `mms-mixed` 并提示（`_auto_backend_for`）；用户自己选过后端或填了 `model_id` 就不再自动改。
+- **第三个后端 `mms-fa`**：Meta 的 MMS 强制对齐器（`xycld/lyric-align-mms-fa` 的 ONNX 转换，revision 固定，CC-BY-NC-4.0，`pip install 'milikara[fa]'`，离线包已经带上）。它在 1130 种语言的**罗马字文本**上训练，拼音 / 粤拼字母正好就是它的输入，所以不需要拍转写 —— profile 用 `ja-hepburn`，中文 / 粤语单元在那里本来就输出小写字母。只用 onnxruntime，不需要 torch；INT8 权重 317 MB 首次使用时下载，CPU 上约 14× 实时（20 s 音频 1.4 s）。它的输出比模型多一列：导出时在 log-softmax 之后又接了一列恒为 0 的 `*`（概率 1，会赢下每次 argmax），`mms_fa.read_vocab` 把这列丢掉、按剩下的 28 列归一化，`-`（第 0 列）是 CTC 空白。帧长仍是 20 ms（hop 320、感受野 400，与 `conv_output_length` 一致），所以分块、缓存、检查都不用改。**它不是默认值**：自动切换只在 `mms-mixed` 和 `mms-ja` 之间发生，因为换到 `mms-fa` 意味着第一次对齐要下载 317 MB，这种事该由用户自己选。
+- **代价**：转写丢掉声调、丢掉部分韵尾，`zoeng` 这样的音节被压成一两拍，所以中文 / 粤语的单元时长不能按日语的 `CheckConfig.min_unit_ms=40` 判断；一个汉字唱几个音（日语有 `ー` + `apply_holds`，中文没有对应物）仍然只能靠人工改时间。
+- **校准**：`auto_calibrate` 在歌词含当前后端不支持的语言时把 `confident` 置为 false 并说明原因 —— 听不到这门语言的模型给出的句首时间是系统性偏差，不是整体偏移，按它平移会让整首歌错开。此时请换 `mms-mixed` / `mms-fa` 或手动校准。
+
+实测（本地一次性评估，没有随仓库附歌曲）：把增强 LRC 里的逐字时间当作真值，只把行时间喂给对齐（普通 LRC），再比每个字亮起的时间。三首歌的歌词分别是粤语 302 字、国语 431 字、国语 433 字。表里是**减掉这首歌自己的中位偏移之后**的误差（相当于校准过）：三首歌的 LRC 相对音频分别差 +84…+100 / −190…−221 / −32…−58 ms，三种后端在这一点上互相一致，所以是歌与 LRC 的偏移，不是模型的偏差。
+
+| 歌曲 | 配置 | 中位误差 | ≤100 ms | ≤200 ms | 最大 |
+| --- | --- | --- | --- | --- | --- |
+| 粤语 | mms-ja · 拼音读音（v1.3.0 的行为） | 68 ms | 64.9 % | 88.1 % | 964 ms |
+| 粤语 | mms-mixed · 粤拼读音 · 拍转写 | 55 ms | 73.5 % | 92.4 % | 1035 ms |
+| 粤语 | **mms-fa · 粤拼读音 · 原字母** | **54 ms** | **80.8 %** | **97.4 %** | **396 ms** |
+| 国语一 | mms-ja · 拼音读音 | 73 ms | 61.0 % | 82.1 % | 11563 ms |
+| 国语一 | mms-mixed · 拼音读音 · 拍转写 | 88 ms | 53.4 % | 72.4 % | 11622 ms |
+| 国语一 | **mms-fa · 拼音读音 · 原字母** | **49 ms** | **80.3 %** | **94.7 %** | 9015 ms |
+| 国语二 | mms-ja · 拼音读音 | 69 ms | 69.5 % | 90.8 % | 4442 ms |
+| 国语二 | mms-mixed · 拼音读音 · 拍转写 | 61 ms | 73.0 % | 92.4 % | 4472 ms |
+| 国语二 | **mms-fa · 拼音读音 · 原字母** | **44 ms** | **82.0 %** | **97.2 %** | **390 ms** |
+
+结论：读音换成粤拼是粤语歌的第一笔收益（4 秒级的错行消失），拍转写再补一点；但两种走日语模型的做法都撞在“它没学过中文”这堵墙上。`mms-fa` 在三首歌、三个指标上都更好，尤其把多秒级的离群值压到 400 ms 左右（国语一那一行的 9 s 是一个没有演唱的版权 / 声明行，评估脚本的过滤器没排掉），这才是中文 / 粤语歌该用的后端。差量最小的是粤语的中位误差（54 vs 55 ms，打平），差得最多的是 ≤100 ms 的比例（粤语 74 %→81 %、国语 53 %→80 %）。两条老路线仍然保留：不装 `[fa]` 时它们对日语歌是必需的，也是 `mms-fa` 装不上时的退路。判别不出粤语的歌（用标准书面语写的粤语歌）一定要手动切“粤语”，否则走的是拼音那一行。
+
 ## 离线版的更新
 
 `packaging/updater/update.py` 是更新程序（只用标准库）；打包时 `packaging/updater/build.py package` 在它前面加一行启动命令，生成 `更新.bat`（一行 cmd，Python 用 `-x` 跳过）和 `更新.command`（sh 行藏在 Python 字符串里），用文件夹里自带的 Python 运行，并写入 `version.json`（版本、平台、Windows 的版本、组件）。这两个文件不在仓库里，只在离线包和 Release 里。Windows 离线包有三个版本：CPU、NVIDIA（CUDA）和 AMD 显卡（ROCm，torch 来自 AMD 的软件源，包含 `windows-package.yml` 里 `ROCM_DEVICES` 列出的显卡系列）；没有 `version.json` 的旧文件夹按 torch 的版本号（`+cu…`、`+rocm…`）区分，更新时换上对应版本的使用说明。

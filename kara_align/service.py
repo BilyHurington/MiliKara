@@ -494,6 +494,24 @@ def import_result_json(h: ProjectHandle, text: str) -> AlignmentResult:
     return r
 
 
+def _auto_backend_for(p: Project) -> list[str]:
+    """Follow the lyrics' language: the ja-only default cannot read pinyin / Jyutping.
+
+    Only the untouched default is switched — an explicitly picked backend or model id is the
+    user's call, and ``capability_warnings`` still tells them when it does not fit.
+    """
+    from .reading.prepare import LANG_NAMES
+
+    cfg, lang = p.config, p.lyrics.language
+    if cfg.model_id is not None or cfg.backend not in ("mms-ja", "mms-mixed"):
+        return []
+    want = "mms-mixed" if lang in ("zh", "yue") else "mms-ja"
+    if cfg.backend == want:
+        return []
+    cfg.backend = want
+    return [f"歌词语言为{LANG_NAMES.get(lang, lang)}，对齐后端已切换为 {want}（中文/粤语按日语拍节转写送入模型）"]
+
+
 def apply_lyrics(h: ProjectHandle, preview_id: str, *, prepare: bool = True) -> list[str]:
     res = h.previews.pop(preview_id, None)
     if res is None:
@@ -509,6 +527,7 @@ def apply_lyrics(h: ProjectHandle, preview_id: str, *, prepare: bool = True) -> 
         messages: list[str] = []
         if prepare:
             messages += prepare_readings_locked(p)
+        messages += _auto_backend_for(p)
         messages += _calibration_for_new_lyrics(p, old_doc)
         h.save()
         return messages + [f"可配对的附加歌词轨: {', '.join(extra)}"] if extra else messages
@@ -582,6 +601,22 @@ def prepare_readings(h: ProjectHandle, overwrite_rule: bool = True) -> dict:
         rep = prepare_doc(h.project.lyrics, overwrite_rule=overwrite_rule)
         h.save()
         return asdict(rep)
+
+
+def set_lyrics_language(h: ProjectHandle, lang: str) -> list[str]:
+    """Sing the document in another language: rule readings are re-derived, manual ones are kept."""
+    from .reading.prepare import LANG_NAMES, READING_LANGS, prepare_doc, set_doc_language
+
+    if lang not in (*READING_LANGS, "en", "other"):
+        raise ServiceError(f"未知的歌词语言 {lang!r}；可用：{', '.join((*READING_LANGS, 'en', 'other'))}")
+    with h.lock:
+        p = h.project
+        if p.lyrics.language == lang:
+            return []
+        set_doc_language(p.lyrics, lang)
+        rep = prepare_doc(p.lyrics, overwrite_rule=True)
+        h.save()
+    return [f"语言已改为{LANG_NAMES.get(lang, lang)}：{len(rep.prepared)} 行规则读音已重新生成"] + _auto_backend_for(p)
 
 
 def fetch_translation(h: ProjectHandle) -> int:

@@ -127,11 +127,15 @@ def detect_format(text: str, filename: Optional[str] = None) -> DetectedFormat:
 
 
 def detect_language(texts: list[str]) -> str:
+    from ..reading.cantonese import looks_cantonese
+
     joined = "".join(texts)
     if _KANA.search(joined):
         return "ja"
     if _HAN.search(joined):
-        return "zh"
+        # Cantonese is written in the same hanzi: only the colloquial characters (嘅 咗 喺 唔 …) tell it
+        # apart, so standard written Chinese sung in Cantonese stays "zh" until the user says otherwise
+        return "yue" if looks_cantonese(texts) else "zh"
     if _LATIN.search(joined):
         return "en"
     return "other"

@@ -9,7 +9,7 @@ import type { Line, ProjectView, Segment } from '@/lib/types';
 import { ppath, run, setPV, toast, useProject, useView } from '@/store/app';
 import { DeleteLineButton } from '@/components/DeleteLineButton';
 import {
-  Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, Dialog, EmptyState, Field, Input, Segmented, Switch, Tip,
+  Badge, Button, Callout, Card, CardBody, CardHeader, ConfirmButton, Dialog, EmptyState, Field, Input, Segmented, Select, Switch, Tip,
 } from '@/components/ui';
 import { HelpButton } from '@/components/guide/Help';
 
@@ -24,6 +24,16 @@ const SOURCE: Record<Segment['reading_source'], { label: string; chip: string; t
 };
 
 const needsCheck = (s: Segment) => s.uncertain && !s.confirmed;
+
+/** The languages a lyric can be sung in; the rules read each of them differently (and the backend
+ *  default follows the choice — see `_auto_backend_for`). */
+const LANGS: { value: string; label: string }[] = [
+  { value: 'ja', label: '日语' },
+  { value: 'zh', label: '中文（普通话）' },
+  { value: 'yue', label: '粤语（Jyutping）' },
+  { value: 'en', label: '英文' },
+  { value: 'other', label: '其他' },
+];
 /** Words (letters, digits) still without a reading: shown as chips too, so they can be given one;
  *  punctuation and spaces stay plain text. */
 const readable = (s: Segment) => !s.hidden && (s.units.length > 0 || /[\p{L}\p{N}]/u.test(s.surface));
@@ -56,8 +66,7 @@ export function ReadingsCard() {
     return true;
   });
 
-  const prepare = () => run(async () => {
-    setBusy(true);
+  const prepare = () => run(async () => {    setBusy(true);
     try {
       const pv = await api.post<ProjectView & { report: any }>(ppath('/readings/prepare'), { overwrite_rule: overwrite });
       setPV(pv);
@@ -69,6 +78,18 @@ export function ReadingsCard() {
       setBusy(false);
     }
   }, '规则注音失败');
+
+  const setLanguage = (language: string) => run(async () => {
+    setBusy(true);
+    try {
+      const pv = await api.put<ProjectView & { messages: string[] }>(ppath('/lyrics/language'), { language });
+      setPV(pv);
+      setLastReport(null);
+      toast('ok', '歌词语言已更新', pv.messages?.[0] ?? '规则读音已按新语言重新生成');
+    } finally {
+      setBusy(false);
+    }
+  }, '修改歌词语言失败');
 
   return (
     <Card>
@@ -88,6 +109,13 @@ export function ReadingsCard() {
       />
       <CardBody className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-muted">
+            歌词语言
+            <Select className="h-8 text-xs" value={project.lyrics.language} disabled={busy}
+              onChange={(e) => setLanguage(e.target.value)} aria-label="歌词语言">
+              {LANGS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+            </Select>
+          </label>
           <Segmented<Filter> label="筛选读音"
             size="sm"
             value={filter}
@@ -106,8 +134,9 @@ export function ReadingsCard() {
         </div>
 
         <p className="text-xs leading-5 text-subtle">
-          日语按拍整理：拗音合并（きゃ），促音「っ」、拨音「ん」、长音「ー」各自保留为单元。单纯改变分组而不改变读音不会改善声学路径；
-          真正的提升来自正确读音。
+          日语按拍整理：拗音合并（きゃ），促音「っ」、拨音「ん」、长音「ー」各自保留为单元。
+          中文 / 粤语每个汉字一个单元，读音为不带声调的拼音 / 粤拼；对齐时要么转写成日语拍节送进日语模型（mms-mixed 后端），要么直接用字母送进 MMS_FA（mms-fa 后端，更准）。
+          单纯改变分组而不改变读音不会改善声学路径；真正的提升来自正确读音。
         </p>
 
         {view.capability_warnings.map((w) => <Callout key={w} tone="warn">{w}</Callout>)}

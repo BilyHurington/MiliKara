@@ -11,18 +11,33 @@ from typing import Any, Callable
 
 from ...models import AlignConfig
 from .fake import ScriptedBackend
+from .mms_fa import DEFAULT_LICENSE as FA_LICENSE, DEFAULT_MODEL_ID as FA_MODEL_ID
+from .mms_fa import DEFAULT_REVISION as FA_REVISION, FA_HINT, MMSFABackend
 from .wav2vec2_ctc import (DEFAULT_LICENSE, DEFAULT_MODEL_ID, DEFAULT_REVISION, ML_HINT,
-                           MMSJapaneseBackend, Wav2Vec2CTCBackend)
+                           MMSJapaneseBackend, MMSSinophoneBackend, Wav2Vec2CTCBackend)
 
 
 def _ml_available() -> bool:
     return all(importlib.util.find_spec(m) is not None for m in ("torch", "transformers"))
 
 
+def _fa_available() -> bool:
+    return all(importlib.util.find_spec(m) is not None for m in ("onnxruntime", "huggingface_hub"))
+
+
 def _make_hf(cls):
     def factory(config: AlignConfig):
         if not _ml_available():
             raise RuntimeError(ML_HINT)
+        return cls(model_id=config.model_id, revision=config.model_revision, device=config.device,
+                   chunk_s=config.chunk_s, context_s=config.context_s)
+    return factory
+
+
+def _make_fa(cls):
+    def factory(config: AlignConfig):
+        if not _fa_available():
+            raise RuntimeError(FA_HINT)
         return cls(model_id=config.model_id, revision=config.model_revision, device=config.device,
                    chunk_s=config.chunk_s, context_s=config.context_s)
     return factory
@@ -37,6 +52,26 @@ BACKENDS: dict[str, dict[str, Any]] = {
         "default_revision": DEFAULT_REVISION,
         "license": DEFAULT_LICENSE,
         "requires": ["torch", "transformers"],
+    },
+    "mms-mixed": {
+        "factory": _make_hf(MMSSinophoneBackend),
+        "description": "Same Japanese karaoke model, reading Chinese/Cantonese syllables as Japanese morae "
+                       "(mixed cn/粤/ja/en lyrics; approximate, cannot hear tones)",
+        "languages": ["ja", "zh", "yue", "en"],
+        "default_model": DEFAULT_MODEL_ID,
+        "default_revision": DEFAULT_REVISION,
+        "license": DEFAULT_LICENSE,
+        "requires": ["torch", "transformers"],
+    },
+    "mms-fa": {
+        "factory": _make_fa(MMSFABackend),
+        "description": "Meta's MMS forced aligner (MMS_FA, ONNX INT8): trained on 1,130 languages' "
+                       "romanised text, so pinyin / Jyutping / romaji letters align as they are",
+        "languages": ["ja", "zh", "yue", "en"],
+        "default_model": FA_MODEL_ID,
+        "default_revision": FA_REVISION,
+        "license": FA_LICENSE,
+        "requires": ["onnxruntime", "huggingface_hub"],
     },
     "wav2vec2-ctc": {
         "factory": _make_hf(Wav2Vec2CTCBackend),
@@ -89,4 +124,4 @@ def list_backends() -> list[dict[str, Any]]:
 
 
 __all__ = ["BACKENDS", "ScriptedBackend", "Wav2Vec2CTCBackend", "MMSJapaneseBackend",
-           "get_backend", "list_backends", "register_backend"]
+           "MMSSinophoneBackend", "MMSFABackend", "get_backend", "list_backends", "register_backend"]
