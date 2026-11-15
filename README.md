@@ -44,7 +44,7 @@
 ## 特点
 
 - **按拍对齐**：每个假名（拍）都有自己的开始和结束时间，扫光跟着演唱一个字一个字走；长音「ー」、促音「っ」、逐个念出的字母（R O M A…）都按实际唱法处理。
-- **中文与粤语**：歌词语言可切换（日语 / 中文 / 粤语 / 英文），一个汉字一个单元：中文用不带声调的拼音，粤语用不带声调的粤拼（`pip install -e ".[yue]"` 装上 Jyutping 词典）。中文 / 粤语的音节会按读音转写成日语拍的拼法送进同一份对齐模型（后端 `mms-mixed`），而不是把拼音字母直接交给只认识日语的模型；模型听不到这门语言时它不会给出一个看上去可信的自动偏移。
+- **中文与粤语**：歌词语言可切换（日语 / 中文 / 粤语 / 英文），一个汉字一个单元：中文用不带声调的拼音，粤语用不带声调的粤拼（`pip install -e ".[yue]"` 装上 Jyutping 词典）。中文 / 粤语的音节会按读音转写成日语拍的拼法送进同一份对齐模型（后端 `mms-mixed`），而不是把拼音字母直接交给只认识日语的模型；想更准就换 `mms-fa` 后端（`pip install -e ".[fa]"`，Meta 的 MMS_FA，ONNX 版、不用 torch），拼音 / 粤拼字母就是它的输入。模型听不到这门语言时它不会给出一个看上去可信的自动偏移。
 - **利用歌词里的时间**：LRC 的每行时间作为软锚点，长前奏、间奏、重复的副歌也不会对错行；视频和歌词差了多少，添加任务时标一下第一句（或交给自动检测）即可。
 - **注音**：规则读音 + 可选的 AI 注音（复制提示词到任意 AI 聊天网页，或一键交给 Claude Code / Codex / OpenAI 兼容 API），回复都经过校验再采用。
 - **人声分离**：MelBand / BS-RoFormer 分出人声后对齐更准，也能生成降低人声的伴唱视频。
@@ -71,7 +71,7 @@ uv venv --python 3.12 .venv
 uv pip install -e ".[ml,separation]"    # 对齐模型（torch + transformers）和人声分离
 ```
 
-做中文 / 粤语歌时再加 `yue`：`uv pip install -e ".[ml,separation,yue]"`（Jyutping 词典，装不上时粤语读音会退回拼音并在诊断里说明）。
+做中文 / 粤语歌时再加 `yue`：`uv pip install -e ".[ml,separation,yue]"`（Jyutping 词典，装不上时粤语读音会退回拼音并在诊断里说明）。想把中文 / 粤语对齐得更好，再加 `fa`：`uv pip install -e ".[ml,separation,yue,fa]"`（Meta MMS_FA 的 ONNX 版本，不用 torch，首次使用时下载 317 MB 权重；见 [docs/technical.md](docs/technical.md#中文与粤语)）。
 
 **AMD 显卡**（ROCm）：在上面的 `uv pip install -e …` 之前，先从 AMD 的软件源装上与显卡对应的 torch：
 

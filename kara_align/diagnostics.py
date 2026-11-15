@@ -2,7 +2,7 @@
 
 The log (``<home>/logs/milikara.log``, rotated: a few MB at most) gets failed tasks and jobs with
 their traceback and the server's own errors.  ``report()`` says what the program runs on (version,
-system, Python, torch / CUDA / MPS, ffmpeg and libass, the relevant settings — never an API key), a
+system, Python, torch / CUDA / MPS, onnxruntime, ffmpeg and libass, the relevant settings — never an API key), a
 failure's details when asked for one, and the end of the log.
 """
 
@@ -123,6 +123,20 @@ def _jyutping() -> str:
         return f"读取失败（{e}）"
 
 
+def _onnx() -> str:
+    """onnxruntime, which the MMS_FA backend needs instead of torch."""
+    try:
+        import onnxruntime
+    except Exception:
+        return "未安装（MMS_FA 后端不可用）· pip install 'milikara[fa]'"
+    try:
+        providers = onnxruntime.get_available_providers()
+        gpu = [p for p in providers if p.startswith(("CUDA", "Dml", "CoreML"))]
+        return f"{onnxruntime.__version__} · {'、'.join(gpu) if gpu else 'CPU'}"
+    except Exception as e:
+        return f"{getattr(onnxruntime, '__version__', '?')}（读取执行设备出错：{e}）"
+
+
 def report(task: Optional[dict] = None, job: Optional[dict] = None) -> str:
     from . import settings as app_settings
     from . import updates
@@ -133,6 +147,7 @@ def report(task: Optional[dict] = None, job: Optional[dict] = None) -> str:
         f"系统：{platform.platform()} · {platform.machine()}",
         f"Python：{platform.python_version()} · {sys.executable}",
         f"torch：{_torch()}",
+        f"onnxruntime：{_onnx()}",
         f"ffmpeg：{_ffmpeg()}",
         f"视频编码：{_encoder()}",
         f"粤语注音：{_jyutping()}",
