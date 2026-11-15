@@ -149,8 +149,8 @@ jobs:
             $index = if ($env:VARIANT -eq "cuda") { "https://download.pytorch.org/whl/cu128" } else { "https://download.pytorch.org/whl/cpu" }
             uv pip install --python $py torch --index-url $index
           }
-          uv pip install --python $py ".[ml,separation]"
-          & $py -c "import torch, transformers, audio_separator, kara_align; print('torch', torch.__version__, 'cuda', torch.version.cuda, 'hip', getattr(torch.version, 'hip', None), '| transformers', transformers.__version__)"
+          uv pip install --python $py ".[ml,separation,yue]"
+          & $py -c "import torch, transformers, audio_separator, ToJyutping, kara_align; print('torch', torch.__version__, 'cuda', torch.version.cuda, 'hip', getattr(torch.version, 'hip', None), '| transformers', transformers.__version__)"
           # torchvision's operators load (a torchvision built for another torch does not), and the aligner's
           # model class imports (transformers pulls torchvision in): checked here, not when the models load
           & $py -c "import torch, torchvision, torchvision.ops; from transformers import Wav2Vec2ForCTC; torchvision.ops.nms(torch.zeros(1, 4), torch.zeros(1), 0.5); print('torchvision', torchvision.__version__)"

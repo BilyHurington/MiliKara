@@ -122,6 +122,10 @@ class PrepareBody(BaseModel):
     overwrite_rule: bool = True
 
 
+class LanguageBody(BaseModel):
+    language: str
+
+
 class SegmentBody(BaseModel):
     reading: str
     units: Optional[list[str]] = None
@@ -777,6 +781,12 @@ def create_app(root: Optional[Path] = None, jobs: Optional[JobManager] = None,
         h = handle(pid)
         report = S.prepare_readings(h, body.overwrite_rule)
         return view(h, report=report)
+
+    @app.put("/api/projects/{pid}/lyrics/language")
+    def lyrics_language(pid: str, body: LanguageBody):
+        h = handle(pid)
+        messages = guard(S.set_lyrics_language, h, body.language)
+        return view(h, messages=messages)
 
     @app.put("/api/projects/{pid}/lines/{line_id}/segments/{segment_id}")
     def segment_reading(pid: str, line_id: str, segment_id: str, body: SegmentBody):

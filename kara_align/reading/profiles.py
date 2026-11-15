@@ -28,6 +28,15 @@ string per unit so token positions map back to units.
   borrowed from the next / previous line.
 * ``en`` units: lowercase letters (apostrophes dropped).
 * ``zh`` units: tone-less pinyin letters, ü written as ``v``.
+* ``yue`` units: tone-less Jyutping letters (one syllable per unit).
+
+``mixed-mora`` (version ``mixed-mora/1``) is the same profile for a model that
+was still trained on Japanese only, but fed Chinese / Cantonese lyrics: it
+rewrites every zh / yue unit into the *Japanese mora spelling* of that syllable
+(:mod:`kara_align.reading.proxy`), so the model hears sounds it was trained on
+instead of raw pinyin.  Rows of a mixed line keep their own language: a
+yue unit goes through Jyutping, a zh unit through pinyin, en stays letters and
+a ja unit is spelled exactly as ``ja-hepburn`` does.
 """
 
 from __future__ import annotations
@@ -123,6 +132,27 @@ def _geminate(next_text: str) -> str:
     return next_text[0]
 
 
+# every spelling the mora tables above can produce; a proxy text must split into these
+_MORA_ROMAJI = frozenset(_BASE.values()) | frozenset(_DIGRAPH.values())
+# a checked coda (Cantonese -p -t -k) has no mora of its own in Japanese: it stays a bare stop letter
+_STOP_LETTERS = frozenset({"p", "t", "k"})
+
+
+def is_mora_text(s: str) -> bool:
+    """True when ``s`` splits into Japanese mora spellings (the sounds the ja model was trained on)."""
+    i, n = 0, len(s)
+    while i < n:
+        if s[i] in _STOP_LETTERS and i == n - 1:
+            return True
+        for width in (3, 2, 1):
+            if s[i:i + width] in _MORA_ROMAJI:
+                i += width
+                break
+        else:
+            return False
+    return True
+
+
 _LETTERS_RE = re.compile(r"[a-z]+")
 
 
@@ -131,29 +161,53 @@ def _letters(s: str) -> str:
     return "".join(_LETTERS_RE.findall(s))
 
 
+def _hepburn_unit(reading: str, lang: str, flags: Sequence[str]) -> str:
+    """The ``ja-hepburn`` text of one unit (a sokuon is still marked; :func:`_finish` resolves it)."""
+    if lang in ("en", "zh", "yue", "other") and not _looks_kana(reading):
+        return _letters(reading)
+    if "sokuon" in flags or to_hiragana(reading) == "っ":
+        return "\0sokuon"
+    if is_hold(reading):
+        return ""  # held: time from the unit before it, no tokens of its own
+    return unit_romaji(reading)
+
+
+def _finish(base: Sequence[str]) -> list[str]:
+    out = list(base)
+    for i in range(len(out)):
+        if out[i] == "\0sokuon":
+            # only a directly following unit may supply the geminate
+            nxt = out[i + 1] if i + 1 < len(out) and out[i + 1] and out[i + 1][0] != "\0" else ""
+            out[i] = _geminate(nxt)
+    return out
+
+
 class JaHepburnProfile:
     name = "ja-hepburn"
     version = "ja-hepburn/2"
 
     def unit_texts(self, readings: Sequence[str], langs: Sequence[str], flags: Sequence[Sequence[str]]) -> list[str]:
-        n = len(readings)
+        return _finish([_hepburn_unit(r, lang, fl) for r, lang, fl in zip(readings, langs, flags)])
+
+
+class MixedMoraProfile:
+    """Chinese / Cantonese syllables as Japanese mora spellings (see the module docstring)."""
+
+    name = "mixed-mora"
+    version = "mixed-mora/1"
+
+    def unit_texts(self, readings: Sequence[str], langs: Sequence[str], flags: Sequence[Sequence[str]]) -> list[str]:
+        from . import proxy
+
         base: list[str] = []
         for r, lang, fl in zip(readings, langs, flags):
-            if lang in ("en", "zh", "other") and not _looks_kana(r):
-                base.append(_letters(r))
-            elif "sokuon" in fl or to_hiragana(r) == "っ":
-                base.append("\0sokuon")
-            elif is_hold(r):
-                base.append("")  # held: time from the unit before it, no tokens of its own
+            if lang == "zh" and not _looks_kana(r):
+                base.append(proxy.pinyin_to_mora(r) or _letters(r))
+            elif lang == "yue" and not _looks_kana(r):
+                base.append(proxy.jyutping_to_mora(r) or _letters(r))
             else:
-                base.append(unit_romaji(r))
-        out = list(base)
-        for i in range(n):
-            if out[i] == "\0sokuon":
-                # only a directly following unit may supply the geminate
-                nxt = out[i + 1] if i + 1 < n and out[i + 1] and out[i + 1][0] != "\0" else ""
-                out[i] = _geminate(nxt)
-        return out
+                base.append(_hepburn_unit(r, lang, fl))
+        return _finish(base)
 
 
 def _looks_kana(s: str) -> bool:
@@ -162,7 +216,7 @@ def _looks_kana(s: str) -> bool:
     return is_kana_text(s)
 
 
-_PROFILES = {"ja-hepburn": JaHepburnProfile}
+_PROFILES = {"ja-hepburn": JaHepburnProfile, "mixed-mora": MixedMoraProfile}
 
 
 def get_profile(name: str = "ja-hepburn"):

@@ -109,7 +109,18 @@ def estimate_lrc_shift(h: "S.ProjectHandle", *, cancel: Optional[CancelToken] = 
             votes.append((b, starts[ln.id] - b))
     if len(votes) < 3:
         raise S.ServiceError("带时间的行太少，无法估计偏移")
-    return fit_offset(votes) | {"starts": starts}
+    fit = fit_offset(votes)
+    # a trial start voted by a model that cannot hear this language is not evidence of the LRC's offset:
+    # the errors are systematic per syllable, not a constant shift, so any cluster it finds is noise
+    from .reading.prepare import LANG_NAMES, unsupported_languages
+
+    langs = S.backend_languages(h.project)
+    bad = unsupported_languages(doc, langs) if langs else []
+    if bad and fit["confident"]:
+        fit["confident"] = False
+        fit["reason"] = (f"歌词含 {'、'.join(LANG_NAMES.get(x, x) for x in bad)} 片段，当前对齐模型（"
+                         f"{h.project.config.backend}）不支持这些语言，自动偏移不可信；请手动校准或换后端")
+    return fit | {"starts": starts}
 
 
 def fit_offset(votes: list[tuple[int, int]]) -> dict:

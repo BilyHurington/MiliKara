@@ -64,7 +64,7 @@ class _Base(BaseModel):
 # Lyrics document
 # ---------------------------------------------------------------------------
 
-Lang = Literal["ja", "zh", "en", "other"]
+Lang = Literal["ja", "zh", "yue", "en", "other"]
 ReadingSource = Literal["rule", "manual", "ai", "import", "none"]
 LineKind = Literal["lyric", "translation", "romanization", "meta", "blank"]
 SourceOrigin = Literal["paste", "upload", "netease", "qq", "project", "manual"]
@@ -80,7 +80,7 @@ class Unit(_Base):
     """
 
     id: str = Field(default_factory=lambda: new_id("u"))
-    reading: str  # kana for ja, pinyin for zh, word for en
+    reading: str  # kana for ja, pinyin for zh, jyutping for yue, word for en
     surface: str = ""
     # extra phonetic flags kept from the reading: sokuon / hatsuon / long vowel
     flags: list[str] = Field(default_factory=list)

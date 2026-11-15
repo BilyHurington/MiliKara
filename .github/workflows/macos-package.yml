@@ -104,8 +104,8 @@ jobs:
           py="$APP/python/bin/python3"
           test "$("$py" -c 'import sys; print(sys.prefix)')" = "$APP/python"
           uv pip install --python "$py" torch
-          uv pip install --python "$py" ".[ml,separation]"
-          "$py" -c "import torch, transformers, audio_separator, kara_align; print('torch', torch.__version__, '| transformers', transformers.__version__)"
+          uv pip install --python "$py" ".[ml,separation,yue]"
+          "$py" -c "import torch, transformers, audio_separator, ToJyutping, kara_align; print('torch', torch.__version__, '| transformers', transformers.__version__)"
           site="$("$py" -c 'import site; print(site.getsitepackages()[0])')"
           case "$site" in "$APP"/*) ;; *) echo "::error::packages went to $site"; exit 1 ;; esac
           du -sh "$site"
