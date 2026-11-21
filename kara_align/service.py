@@ -9,8 +9,10 @@ from __future__ import annotations
 import copy
 import os
 import shutil
+import tempfile
 import threading
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
@@ -262,6 +264,21 @@ def backend_languages(p: Project) -> list[str]:
     return list(BACKENDS.get(p.config.backend, {}).get("languages", ["ja"]))
 
 
+def _original_has_cover(h: ProjectHandle) -> bool:
+    """Whether the original audio file carries its own cover picture.
+
+    Enables the 「用歌曲封面」button when lyrics were pasted (not fetched from a music
+    platform) but the song file has an embedded cover."""
+    orig = h.project.asset("original")
+    if orig is None or orig.path is None:
+        return False
+    ap = store.asset_abspath(h.dir, orig.path)
+    if ap is None or not ap.exists():
+        return False
+    st = ap.stat()
+    return _has_embedded_cover_cached(str(ap), st.st_mtime_ns, st.st_size)
+
+
 def project_view(h: ProjectHandle) -> dict:
     from .align.calibration import check_issues, effective_line_starts, validate_anchors
     from .reading.prepare import capability_warnings
@@ -309,7 +326,7 @@ def project_view(h: ProjectHandle) -> dict:
                 "capability_warnings": cap,
                 "audio": audio,
                 "picture": picture(h),
-                "cover": song_source(p) is not None,
+                "cover": song_source(p) is not None or _original_has_cover(h),
                 "singer_markers": _marker_count(p),
             },
         }
@@ -1336,7 +1353,8 @@ def ensure_upright_video(h: ProjectHandle) -> None:
         h.save()
 
 
-def set_background(h: ProjectHandle, src_path: Path, filename: Optional[str] = None) -> BackgroundAsset:
+def set_background(h: ProjectHandle, src_path: Path, filename: Optional[str] = None, *, cover: Optional[str] = None,
+                   side: Optional[str] = None) -> BackgroundAsset:
     """Use a picture or a video (looped) behind the subtitles (kara_align.karaoke.background).
     Checked before anything changes; stored content-addressed like the other assets."""
     from .audio.io import file_sha256
@@ -1359,7 +1377,7 @@ def set_background(h: ProjectHandle, src_path: Path, filename: Optional[str] = N
         tmp = dest.with_name(f".{dest.name}.part")
         shutil.copyfile(src_path, tmp)
         tmp.replace(dest)
-    bg = BackgroundAsset(sha256=sha, path=f"assets/{dest.name}", filename=name, kind=kind, **info)
+    bg = BackgroundAsset(sha256=sha, path=f"assets/{dest.name}", filename=name, kind=kind, cover=cover, side=side, **info)
     with h.lock:
         old = h.project.background.path if h.project.background is not None else None
         h.project.background = bg
@@ -1376,36 +1394,105 @@ def song_source(p: Project) -> Optional[tuple[str, str, Optional[str]]]:
     return None
 
 
-def cover_background(h: ProjectHandle) -> BackgroundAsset:
-    """The song's cover, blurred behind the cover itself, as the picture behind the subtitles
-    (karaoke/cover.py).  The cover comes from the music platform the lyrics were fetched from."""
-    import tempfile
+@lru_cache(maxsize=64)
+def _has_embedded_cover_cached(path: str, mtime_ns: int, size: int) -> bool:
+    """Whether the audio file at ``path`` carries an embedded picture, cached per file version."""
+    from .karaoke.cover import has_embedded_cover
 
-    from .karaoke.cover import CoverError, blurred_cover, fetch_cover
+    try:
+        return has_embedded_cover(path)
+    except Exception:
+        return False
 
+
+def _cover_source_key(h: ProjectHandle) -> Optional[tuple]:
+    """A hashable identity of the cover to use: the music link the lyrics came from, or the song
+    file itself (its embedded picture)."""
     with h.lock:
         src = song_source(h.project)
-    if src is None:
-        raise ServiceError("歌词不是从网易云音乐 / QQ 音乐链接获取的，没有封面")
-    platform, song_id, url = src
-    try:
+        original = h.project.asset("original")
+    if src is not None:
+        platform, song_id, url = src
+        return ("platform", platform, song_id, url)
+    if original is not None and original.path is not None:
+        ap = store.asset_abspath(h.dir, original.path)
+        if ap is not None and ap.exists():
+            st = ap.stat()
+            if _has_embedded_cover_cached(str(ap), st.st_mtime_ns, st.st_size):
+                return ("embedded", str(ap), st.st_mtime_ns, st.st_size)
+    return None
+
+
+@lru_cache(maxsize=16)
+def _raw_cover(src_key: tuple) -> bytes:
+    """The cover's raw bytes, cached: fetched from the platform or read out of the song file."""
+    from .karaoke.cover import embedded_cover, fetch_cover
+
+    raw = None
+    if src_key[0] == "platform":
+        _, platform, song_id, url = src_key
         if not url:  # lyrics fetched before covers were kept: ask the platform again
             from .lyrics.fetch import fetch_song
 
             url = fetch_song(platform, song_id).cover_url
-        if not url:
-            raise ServiceError("音乐平台没有这首歌的封面")
-        jpg = blurred_cover(fetch_cover(url))
+        if url:
+            raw = fetch_cover(url)
+    else:
+        raw = embedded_cover(src_key[1])
+    if raw is None:
+        raise ServiceError("没有可用的封面：歌词不是从网易云音乐 / QQ 音乐链接获取的，歌曲文件里也没有内嵌封面")
+    return raw
+
+
+def _cover_jpeg(h: ProjectHandle, bg) -> tuple[bytes, str, str]:
+    """(jpeg bytes, cover kind, display name) of the song's cover rendered per the style's
+    ``background``: blurred over the whole frame, or a panel on one side."""
+    from .karaoke.cover import CoverError, blurred_cover, split_cover
+
+    key = _cover_source_key(h)
+    if key is None:
+        raise ServiceError("没有可用的封面：歌词不是从网易云音乐 / QQ 音乐链接获取的，歌曲文件里也没有内嵌封面")
+    try:
+        raw = _raw_cover(key)
+        if bg.mode == "split":
+            jpg = split_cover(raw, side=bg.side)
+            name, cover = "歌曲封面（分栏背景）.jpg", "split"
+        else:
+            jpg = blurred_cover(raw, blur=bg.blur, dim=bg.dim)
+            name, cover = "歌曲封面（模糊背景）.jpg", "blur"
     except CoverError as e:
         raise ServiceError(str(e)) from e
     except ServiceError:
         raise
     except Exception as e:
         raise ServiceError(f"无法获取封面：{e}") from e
+    return jpg, cover, name
+
+
+def _cover_jpeg_file(h: ProjectHandle, bg, directory: Path) -> Optional[Path]:
+    """Write the song's cover (per the style's background) as ``directory/cover.jpg`` and return
+    its path, or ``None`` when the mode is "none" or there is no cover."""
+    if bg.mode == "none":
+        return None
+    try:
+        jpg, _, _ = _cover_jpeg(h, bg)
+    except ServiceError:
+        return None
+    path = directory / "cover.jpg"
+    path.write_bytes(jpg)
+    return path
+
+
+def cover_background(h: ProjectHandle) -> BackgroundAsset:
+    """Persist the song's cover as the project background, following the style's ``background``
+    (blur over the whole frame, or a panel on one side)."""
+    with h.lock:
+        bg = h.project.karaoke.background
+    jpg, cover, name = _cover_jpeg(h, bg)
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "cover.jpg"
         path.write_bytes(jpg)
-        return set_background(h, path, filename="歌曲封面（模糊背景）.jpg")
+        return set_background(h, path, filename=name, cover=cover, side=bg.side if cover == "split" else None)
 
 
 def clear_background(h: ProjectHandle) -> None:
@@ -1439,6 +1526,9 @@ def picture(h: ProjectHandle) -> dict:
         w, hh = frame_size(video, resolution(h.project))
         return {"source": "video", "width": w, "height": hh, "filename": h.project.video.filename}
     w, hh = resolution(h.project)
+    # no video or picture: the style's "background" (blurred / split cover) still fills the frame
+    if h.project.karaoke.background.mode != "none" and _cover_source_key(h) is not None:
+        return {"source": "background", "kind": "image", "filename": "歌曲封面", "width": w, "height": hh}
     return {"source": "black", "width": w, "height": hh}
 
 
@@ -1492,12 +1582,17 @@ def karaoke_preview(h: ProjectHandle, t_ms: int, style: Optional[dict] = None, b
     r, k = _karaoke_inputs(h, style)
     bg = _background_file(h) if background != "black" else None
     video = _video_file(h) if background != "black" and bg is None else None
-    # the size the video is shown at (non-square pixels applied), like the burn: same layout, no squash
-    size = frame_size(video, resolution(h.project)) if video else resolution(h.project)
-    text, _ = build_ass(h.project, r, k, size=size)  # audio timeline; the frame is taken at t (+offset)
-    off = h.project.video.audio_offset_s if video else 0.0
-    return preview_png(text, int(t_ms), size, video=video, audio_offset_s=off,
-                       background=(bg[1], bg[0].kind, bg[0].duration_ms) if bg else None)
+    # with no video or picture, the style's "background" (blurred / split cover) fills the frame
+    with tempfile.TemporaryDirectory() as td:
+        auto = (_cover_jpeg_file(h, k.background, Path(td))
+                if background != "black" and bg is None and video is None else None)
+        # the size the video is shown at (non-square pixels applied), like the burn: same layout, no squash
+        size = frame_size(video, resolution(h.project)) if video else resolution(h.project)
+        text, _ = build_ass(h.project, r, k, size=size)  # audio timeline; the frame is taken at t (+offset)
+        off = h.project.video.audio_offset_s if video else 0.0
+        bg_arg = (auto, "image", None) if auto is not None else (
+            (bg[1], bg[0].kind, bg[0].duration_ms) if bg else None)
+        return preview_png(text, int(t_ms), size, video=video, audio_offset_s=off, background=bg_arg)
 
 
 def karaoke_burn(h: ProjectHandle, *, background: str = "auto", audio: str = "original", quality: str = "standard",
@@ -1546,9 +1641,15 @@ def karaoke_burn(h: ProjectHandle, *, background: str = "auto", audio: str = "or
                 use_video_audio = True
             else:
                 audio_file = asset_path(h, orig)
+        # with no video or picture, the style's "background" (blurred / split cover) fills the frame
+        burn_bg = (bg[1], bg[0].kind) if bg else None
+        if burn_bg is None and background != "black" and video is None:
+            auto = _cover_jpeg_file(h, k.background, Path(td))
+            if auto is not None:
+                burn_bg = (auto, "image")
         burn(text, out, size, orig.duration_ms, video=video, audio=audio_file, audio_offset_s=offset_s,
              use_video_audio=use_video_audio, quality=quality, cancel=cancel, progress=progress,
-             background=(bg[1], bg[0].kind) if bg else None)
+             background=burn_bg)
     return {"filename": out.name, "warnings": warnings}
 
 

@@ -34,6 +34,7 @@ style's ``advance_ms``.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -811,26 +812,33 @@ def sweep_clip(segs: list[tuple[int, int, float, float]], hi: float, instant: bo
 Rect = tuple[float, float, float, float]  # x0, y0, x1, y1
 
 
-def band_clip(moves: list[Move], rect: Rect, sung: bool, hi: float) -> str:
+def band_clip(moves: list[Move], rect: Rect, sung: bool, hi: float, dy: float = 0.0, dur: int = 0) -> str:
     """An animated rectangular \\clip showing one band (``rect``) of a chunk: its part left of the sweep
     edge (``sung``) or right of it.  The two meet at the same rounded x, and neighbouring bands share
-    their rounded edges, so every pixel of the chunk comes from exactly one of them."""
+    their rounded edges, so every pixel of the chunk comes from exactly one of them.  ``dy``: how far the
+    line travels with the scrolling column over the event, so the band's edge travels with it."""
     x0, y0, x1, y1 = (int(round(v)) for v in rect)
+    shift_y = (lambda t: int(round(dy * t / dur))) if (dy and dur > 0) else (lambda t: 0)
 
     def at(x: float) -> int:
         return min(max(int(round(x)), x0), x1)
 
-    def clip(x: float) -> str:
-        e = at(x)
-        return f"\\clip({x0},{y0},{e},{y1})" if sung else f"\\clip({e},{y0},{x1},{y1})"
+    def clip(x: float, t: float = 0.0) -> str:
+        e, d = at(x), shift_y(t)
+        return f"\\clip({x0},{y0 + d},{e},{y1 + d})" if sung else f"\\clip({e},{y0 + d},{x1},{y1 + d})"
 
     if not moves:
-        return clip(hi)
+        out = clip(hi)
+        if dy and dur > 0:
+            out += f"\\t(0,{dur},{clip(hi, dur)})"
+        return out
     out, cur = [clip(0)], 0.0
+    last = 0
     for a, b, x in moves:
         if b - a <= 1 or abs(x - cur) < 1e-9:  # a jump
             if at(x) != at(cur):
-                out.append(f"\\t({a},{b},{clip(x)})")
+                out.append(f"\\t({a},{b},{clip(x, b)})")
+                last = b
             cur = x
             continue
         # a steady move from cur to x: only the stretch inside the band animates this clip
@@ -842,8 +850,12 @@ def band_clip(moves: list[Move], rect: Rect, sung: bool, hi: float) -> str:
             xa = cur + (x - cur) * (ta - a) / (b - a)
             xb = cur + (x - cur) * (tb - a) / (b - a)
             if at(xa) != at(xb):
-                out.append(f"\\t({ta},{max(tb, ta + 1)},{clip(xb)})")
+                out.append(f"\\t({ta},{max(tb, ta + 1)},{clip(xb, tb)})")
+                last = tb
         cur = x
+    if dy and dur > last:
+        # the band's edge keeps travelling with the line after the sweep has left it
+        out.append(f"\\t({last},{dur},{clip(cur, dur)})")
     return "".join(out)
 
 
@@ -932,6 +944,15 @@ def _romaji(project: Project) -> dict[str, str]:
     return out
 
 
+def _fade_alpha(rows: float, dim: int, fade_from: float) -> float:
+    """How transparent (0-255) a lyric is when it sits ``rows`` rows away from the reading line: the
+    lines that are not being sung step back by ``dim`` %, and the column fades out toward the edges."""
+    a = 255.0 * dim / 100.0 if rows > 0.55 else 0.0
+    if fade_from > 0 and rows > fade_from:
+        a = max(a, min(255.0, (rows - fade_from) / 1.5 * 255.0))
+    return min(255.0, a)
+
+
 def resolution(project: Project) -> tuple[int, int]:
     """The frame the subtitles are made for: the background's, else the video's, else 1920×1080."""
     b = project.background
@@ -944,7 +965,6 @@ def resolution(project: Project) -> tuple[int, int]:
         return int(v.width), int(v.height)
     return DEFAULT_SIZE
 
-
 # Layers, bottom to top: effects drawn behind the text, translation glow, translation,
 # text glow (unsung), text glow (sung), lyrics, ruby; then effects in front (7) and the title card (8, 9).
 L_FX, L_TRANS_GLOW, L_TRANS, L_GLOW, L_GLOW_SUNG, L_MAIN, L_RUBY = 0, 1, 2, 3, 4, 5, 6
@@ -954,7 +974,8 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
               time_offset_ms: float = 0.0, size: Optional[tuple[int, int]] = None) -> tuple[str, list[str]]:
     """Return (ASS text, warnings).  ``size``: the frame the subtitles are drawn on (PlayRes)."""
     from .effects import FX_STYLE, Syllable, ball_room, syllable_events
-    from .info import info_events, info_style, legend_events
+    from .info import (block_height, centered_block, column_lines, info_events, info_style, legend_entries,
+                       legend_events, placement_of, progress_events)
 
     style = style or project.karaoke
     audio_offset_ms = time_offset_ms  # the title card keeps real time
@@ -964,6 +985,7 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
     W, H = max(16, int(W)), max(16, int(H))
     k = W / REF_WIDTH  # by width: the text takes the same share of the frame's width at any size
     lay, txt, rb, tr, glow, tm = style.layout, style.text, style.ruby, style.translation, style.glow, style.timing
+    info = style.info
     # a style may name a font this machine does not have (styles travel between machines, the built-in
     # 暖阳 uses macOS fonts): then the default font is used for measuring *and* drawing, so the layout
     # still matches what libass draws
@@ -1018,8 +1040,40 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
         warnings.append(f"这台电脑没有字体 {'、'.join(sorted(set(missing_fonts)))}，已改用 {family}")
     warnings += font_notes
 
-    margin_h = min(lay.margin_h * k, W * 0.4)
-    avail = W - 2 * margin_h
+    center = lay.position == "center"
+    # a prompter that keeps its neighbours is the flowing column with a staircase scroll curve (it steps
+    # up a line at a time, the line being sung staying on the reading line): same plumbing, other curve
+    stepped = center and lay.center_scroll == "prompter" and lay.prompter_neighbors
+    column = center and (lay.center_scroll == "flow" or stepped)
+    # a "split" background puts the cover panel on one side; the lyrics run on the other (see cover.py)
+    cover_side = None
+    if center:
+        from .cover import split_side
+
+        cover_side = split_side(project, style)
+    if cover_side is not None:
+        from .cover import split_geometry
+        panel = split_geometry((W, H), cover_side)["panel"]
+        col_x, col_w = (panel if cover_side == "left" else 0.0), (W - panel)
+    else:
+        col_x, col_w = 0.0, float(W)
+    left_edge, right_edge, center_x = col_x, col_x + col_w, col_x + col_w / 2
+    margin_h = min(lay.margin_h * k, col_w * 0.4)
+    avail = col_w - 2 * margin_h
+    # where the song-info card goes when it travels with the lyrics (centre layout): under the cover
+    # panel of a split background, or inside the scrolling column — (x centre, width, top, bottom)
+    info_place = placement_of(project, style) if center else "corner"
+    card_slot: Optional[tuple[float, float, float, float]] = None
+    if center and info_place in ("column", "cover"):
+        if info_place == "cover" and cover_side is not None:
+            geo = split_geometry((W, H), cover_side)
+            card_slot = (geo["cx"] + geo["side_len"] / 2, float(geo["side_len"]),
+                         geo["cy"] + geo["side_len"] + 24 * k, float(H) - 8 * k)
+        else:
+            card_slot = (center_x, avail, 8 * k, float(H) - 8 * k)
+    orig = project.asset("original")
+    orig_duration = orig.duration_ms if orig is not None and orig.duration_ms else 0.0
+    song_end = (orig_duration + audio_offset_ms) if orig_duration else None
 
     def extent(chunks: list[Chunk]) -> float:
         """How wide a line of these chunks is drawn, readings reaching past its ends included."""
@@ -1075,7 +1129,8 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
         warnings.append(f"{extra} 行与其他行同时演唱（对唱 / 和声），已临时显示在歌词区外多出的一行")
 
     has_ruby = rb.enabled and any(c.ruby for ll in laid for c in ll.chunks)
-    per_line_trans = tr.enabled and tr.position == "line"
+    # centre mode: the translation rides under its line (there is no block to sit beside / opposite)
+    per_line_trans = tr.enabled and (tr.position == "line" or center)
     ruby_h = (ruby_size + gap) if has_ruby else 0.0
     slot_h = main_size + ruby_h + ((trans_size + trans_gap) if per_line_trans else 0)
     n = max(1, lay.lines)
@@ -1085,6 +1140,132 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
     block_h = n * slot_h + (n - 1) * spacing
     block_top = max(0.0, H - margin_v - block_h) if lay.position == "bottom" else margin_v
     top_row = min((ll.slot for ll in laid), default=0)
+
+    # ---- centred scrolling (position="center"): the column of entries (the title, each lyric, the
+    # credits) moves past the reading line.  scroll(t) is the fractional entry on the reading line at
+    # song time t, linear between the entries' anchors; y_of(entry, t) is that entry's baseline.
+    read_y = lay.reading_line * H if center else 0.0
+    pitch = slot_h + spacing
+    rows_above = (read_y / pitch + 1.0) if pitch else 0.0   # rows still off the top of the frame
+    rows_below = ((H - read_y) / pitch + 1.0) if pitch else 0.0
+    fade_from = max(0.0, min(rows_above, rows_below) - 2.0) if lay.edge_fade else 0.0
+    title_lines: list[str] = []
+    credit_lines: list[str] = []
+    if center and info.enabled:
+        title_lines, credit_lines = column_lines(project, style)
+    # the title card is taller than one lyric row: the column leaves it the room it needs, so the
+    # lyrics below (still unsung) never run into it
+    entry_shift = 0
+    if column and title_lines and card_slot is not None and pitch > 0:
+        card_h = block_height(title_lines, style, W, k, family, card_slot[1])
+        legs = legend_entries(project, style)
+        below_card = card_h / 2 + (block_height([r[0] for r in legs], style, W, k, family, card_slot[1]) + 18 * k
+                                   if legs else 0.0)
+        if laid and laid[0].countdown_ms:
+            # the first line's countdown dots ride above its ruby: keep them clear of the card as well
+            below_card += main_size * k * 0.12 * 2.9
+        # the card sits on the reading line, so the first lyric starts on the row below it: any card that
+        # reaches past the line takes at least one row
+        entry_shift = max(0, math.ceil(below_card / pitch - 0.2))
+    anchors: list[tuple[float, float]] = []  # (song time, entry index)
+    if title_lines and card_slot is not None:
+        anchors.append((max(0.0, float(info.start_ms)), 0.0))
+    else:
+        anchors.append((0.0, 0.0))  # an empty lead: the first lyric scrolls up into place
+    for i, ll in enumerate(laid):
+        entry = float(i + 1) + entry_shift
+        if lay.center_scroll == "flow" and ll.countdown_ms:
+            # the column stands still while the countdown dots go: the line being counted in waits on
+            # the reading line under them instead of sliding up past them
+            cd_from = float(ll.start - ll.countdown_ms)
+            if cd_from > anchors[-1][0]:
+                anchors.append((cd_from, entry))
+        anchors.append((ll.start, entry))
+    if (card_slot is not None and credit_lines and info.outro and orig_duration
+            and orig_duration - info.outro_duration_ms > info.start_ms + info.duration_ms):
+        anchors.append((orig_duration - info.outro_duration_ms, float(len(laid) + 1) + entry_shift))
+
+    def scroll(t: float) -> float:
+        if t <= anchors[0][0]:
+            return anchors[0][1]
+        if t >= anchors[-1][0]:
+            return anchors[-1][1]
+        for (ta, ea), (tb, eb) in zip(anchors, anchors[1:]):
+            if ta <= t <= tb:
+                return ea if tb <= ta else ea + (t - ta) / (tb - ta) * (eb - ea)
+        return anchors[-1][1]
+
+    step_ms = 280.0  # how long the column takes to step up a line (a prompter with neighbours)
+
+    def scroll_step(t: float) -> float:
+        """The staircase curve: hold on the entry being sung, step to the next one just before it starts."""
+        if t <= anchors[0][0]:
+            return anchors[0][1]
+        if t >= anchors[-1][0]:
+            return anchors[-1][1]
+        for (ta, ea), (tb, eb) in zip(anchors, anchors[1:]):
+            if ta <= t <= tb:
+                if eb <= ea or tb <= ta:
+                    return ea
+                ramp = min(step_ms, tb - ta)
+                if t <= tb - ramp:
+                    return ea
+                return ea + (t - (tb - ramp)) / ramp * (eb - ea)
+        return anchors[-1][1]
+
+    def y_of(entry: float, t: float) -> float:
+        return read_y - ((scroll_step(t) if stepped else scroll(t)) - entry) * pitch
+
+    col_end = song_end if song_end else (max((ll.end for ll in laid), default=0) + audio_offset_ms)
+
+    def scroll_inv(s: float) -> float:
+        """The song time when the column reaches entry ``s`` (inverse of ``scroll``)."""
+        if s <= anchors[0][1]:
+            return anchors[0][0]
+        if s >= anchors[-1][1]:
+            return float(col_end)
+        for (ta, ea), (tb, eb) in zip(anchors, anchors[1:]):
+            if ea <= s <= eb and eb > ea:
+                return ta + (s - ea) / (eb - ea) * (tb - ta)
+        return float(col_end)
+
+    prompter_card_t1: Optional[float] = None  # a prompter card's last moment (video time), see below
+
+    def _prompter_card() -> None:
+        """The song-info card comes first on the reading line: it keeps it until the first lyric has to
+        appear (a card and a lyric never share the line), so that lyric waits for the card to go."""
+        nonlocal prompter_card_t1
+        if not (title_lines and card_slot is not None and laid):
+            return
+        card_t0 = max(0.0, info.start_ms + audio_offset_ms)
+        card_t1 = min(card_t0 + info.duration_ms, laid[0].start + time_offset_ms - max(0, tm.fade_out_ms))
+        if card_t1 > card_t0:
+            prompter_card_t1 = card_t1
+            laid[0].show_from = max(laid[0].show_from, int(round(card_t1 - time_offset_ms)))
+
+    if center:
+        # A line is on screen the whole time it is in the column (from the bottom edge to the top),
+        # not just while it is the active row — the stacked-window schedule does not apply.
+        if lay.center_scroll == "prompter" and not stepped:
+            # a teleprompter pins one line on the reading line at a time: a line appears lead_in_ms
+            # before it is sung (never while the line before is still up) and stays hold_ms after it,
+            # so two lines are never pinned on the reading line together
+            lead = max(0, tm.lead_in_ms)
+            hold = max(0, tm.hold_ms)
+            least = min_hold_ms(style)
+            for i, ll in enumerate(laid):
+                ll.show_from = max(0, ll.start - lead) if i == 0 else max(ll.start - lead, laid[i - 1].show_to)
+                ll.show_to = ll.end + max(hold, least)
+            _prompter_card()  # the card owns the reading line before the first lyric
+        else:
+            below = (H - read_y) / pitch + 1.0  # rows still below the reading line (off the bottom)
+            above = read_y / pitch + 1.0        # rows above the reading line (off the top)
+            for li, ll in enumerate(laid):
+                e = float(li + 1) + entry_shift
+                ll.show_from = int(round(scroll_inv(e - below)))
+                ll.show_to = int(round(scroll_inv(e + above)))
+            if stepped:
+                _prompter_card()  # the column is still until the first lyric, so the card owns the line
 
     fade_in, fade_out = max(0, tm.fade_in_ms), max(0, tm.fade_out_ms)
     g_alpha = f"&H{int(round(255 * (1 - glow.strength / 100))):02X}&"
@@ -1116,27 +1297,40 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
         tag_of = {"sung": "1c", "unsung": "2c", "outline": "3c"}
         return "".join(f"\\{tag_of[r]}{bgr_tag(b.colors[r])}" for r in roles)
 
-    def cut_of(b: Band) -> str:
-        return "" if b.rect is None else "\\clip({},{},{},{})".format(*(int(round(v)) for v in b.rect))
+    def cut_of(b: Band, dy: float = 0.0, dur: int = 0) -> str:
+        """The band's cut, and — when the line travels with the scrolling column (``dy`` over ``dur`` ms) —
+        the same cut moving with it: a fixed cut would let the band's edge drift through the glyphs."""
+        if b.rect is None:
+            return ""
+        x0, y0, x1, y1 = (int(round(v)) for v in b.rect)
+        out = f"\\clip({x0},{y0},{x1},{y1})"
+        if dy and dur > 0:
+            out += f"\\t(0,{dur},\\clip({x0},{y0 + int(round(dy))},{x1},{y1 + int(round(dy))}))"
+        return out
 
     def emit_text(layer: int, t_from: float, t_to: float, name: str, pos: str, parts: list[Part], width: float,
                   with_glow: bool, font: str, size: float, fad: str,
-                  bands: tuple[list[Band], list[Band]] = ([BASE_BAND], [BASE_BAND])) -> None:
+                  bands: tuple[list[Band], list[Band]] = ([BASE_BAND], [BASE_BAND]),
+                  dy: float = 0.0) -> None:
         """A karaoke text event, with its glow layers when the glow is on (singers: one copy per band,
-        each cut to its band; ``bands``: the text's and the glow's)."""
+        each cut to its band; ``bands``: the text's and the glow's).  ``dy``: how far the line travels
+        with the scrolling column over this event."""
         plain = escape_text("".join(p.text for p in parts))
         fill, glows = bands
+        dur = int(round(t_to - t_from))
         if glow.enabled and with_glow:
             for b in glows:
                 _, _, g_sung, g_unsung, actor = band_look(b, name, "")
-                emit(L_GLOW, t_from, t_to, "KGlow", pos + glow_tags(g_unsung, width, font, size, txt.bold) + cut_of(b),
+                emit(L_GLOW, t_from, t_to, "KGlow",
+                     pos + glow_tags(g_unsung, width, font, size, txt.bold) + cut_of(b, dy, dur),
                      plain, fad, actor)
                 # \ko: the border (the glow) appears as each syllable is sung
-                emit(L_GLOW_SUNG, t_from, t_to, "KGlow", pos + glow_tags(g_sung, width, font, size, txt.bold) + cut_of(b),
+                emit(L_GLOW_SUNG, t_from, t_to, "KGlow",
+                     pos + glow_tags(g_sung, width, font, size, txt.bold) + cut_of(b, dy, dur),
                      _karaoke(parts, int(t_from), "ko"), fad, actor)
         for b in fill:
             sty, _, _, _, actor = band_look(b, name, "")
-            emit(layer, t_from, t_to, sty, pos + blend_tags(b, "sung", "unsung", "outline") + cut_of(b),
+            emit(layer, t_from, t_to, sty, pos + blend_tags(b, "sung", "unsung", "outline") + cut_of(b, dy, dur),
                  _karaoke(parts, int(t_from), tag), fad, actor)
 
     ruby_unsung = (txt if rb.follow_colors else rb).color_unsung
@@ -1145,19 +1339,22 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
                        font: str, size: float, glow_width: float, with_glow: bool,
                        segs: list[tuple[int, int, float, float]], hi: float, fad: str,
                        bands: tuple[list[Band], list[Band]] = ([BASE_BAND], [BASE_BAND]),
-                       outline_sung: str = "") -> None:
+                       outline_sung: str = "", dy: float = 0.0) -> None:
         """Text swept by a moving \\clip instead of \\kf: the text in the unsung colour cut right of the
         sweep and in the sung colour (the style's primary) cut left of it, so every pixel comes from one
-        of the two, also while fading.  Singer bands: the same for each band, both cuts inside it."""
+        of the two, also while fading.  Singer bands: the same for each band, both cuts inside it.
+        ``dy``: how far the line travels with the scrolling column over this event."""
         plain = escape_text(text)
         moves: list[Move] = []
+        dur = int(round(t_to - t_from))
 
         def cuts(b: Band) -> tuple[str, str]:
             nonlocal moves
             if b.rect is None:
                 return sweep_clip(segs, hi, instant, H), sweep_clip(segs, hi, instant, H, True)
             moves = moves or sweep_moves(segs, hi, instant)
-            return band_clip(moves, b.rect, True, hi), band_clip(moves, b.rect, False, hi)
+            return (band_clip(moves, b.rect, True, hi, dy, dur),
+                    band_clip(moves, b.rect, False, hi, dy, dur))
 
         fill, glows = bands
         if glow.enabled and with_glow:
@@ -1266,10 +1463,17 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
                  path, fad)
 
     def emit_tags(tags: Any, left: float, main_y: float, scale: float, t_from: float, t_to: float, fad: str,
-                  before: bool) -> None:
+                  before: bool, dy: float = 0.0) -> None:
         """The blocks at one end of a line (karaoke.linetags), from ``left``: each in its own colours and
         glow, as long as the line shows.  Before the lyric they hug it (rows right-aligned), after it
-        likewise."""
+        likewise.  ``dy``: how far the line travels while it shows (centred scrolling), the tags travel too."""
+        dur = int(t_to - t_from)
+
+        def _pos(an: int, px: float, py: float) -> str:
+            if dy:
+                return f"\\an{an}\\move({px:.1f},{py:.1f},{px:.1f},{py + dy:.1f},0,{dur})"
+            return f"\\an{an}\\pos({px:.1f},{py:.1f})"
+
         x = left
         for b in tags.blocks:
             if not before:
@@ -1281,8 +1485,7 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
                 if not any(r[3] for r in row):
                     # text only: one event (and its glow), as libass sets it
                     body = "".join(f"{{\\1c{bgr_tag(c)}}}{escape_text(t)}" for t, c, _, _ in row)
-                    pos = (f"\\an3\\pos({x + b.width * scale:.1f},{y:.1f})" if before
-                           else f"\\an1\\pos({x:.1f},{y:.1f})")
+                    pos = _pos(3, x + b.width * scale, y) if before else _pos(1, x, y)
                     if glow.enabled:
                         halo = "".join(f"{{\\3c{bgr_tag(g)}}}{escape_text(t)}" for t, _, g, _ in row)
                         emit(L_GLOW, t_from, t_to, "KGlow", pos + glow_tags(row[0][2], glow.size * k * ratio,
@@ -1299,7 +1502,7 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
                         emit_picture(pic, rx, tagger.picture_top(b, y, h, scale), p.width * scale, h,
                                      t_from, t_to, fad)
                         continue
-                    pos = f"\\an1\\pos({rx:.1f},{y:.1f})"
+                    pos = _pos(1, rx, y)
                     if glow.enabled:
                         emit(L_GLOW, t_from, t_to, "KGlow", pos + glow_tags(g, glow.size * k * ratio, tagger.family,
                                                                               b.size * scale, txt.bold),
@@ -1366,7 +1569,7 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
     # a line still wider than the room between the margins (it could not wrap) may reach out to
     # `edge_x` from the frame's edges, moving only as far as it needs to; only wider than that it shrinks
     edge_x = min(lay.edge_margin * k, margin_h)
-    room = W - 2 * edge_x
+    room = col_w - 2 * edge_x
     geom = []
     for ll in laid:
         widths = chunk_widths(ll.chunks, m_main, m_ruby, ruby_size, rb.fit)
@@ -1380,111 +1583,224 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
         if scale < 1.0:
             warnings.append(f"「{ll.text}」过长，已缩小到 {scale:.0%}")
         align = "center"
-        if lay.arrangement == "alternate" and n > 1 and 0 <= ll.slot < n:
+        if lay.arrangement == "alternate" and not center and n > 1 and 0 <= ll.slot < n:
             align = "left" if ll.slot == 0 else ("right" if ll.slot == n - 1 else "center")
         wide = extent * scale > avail + 0.5
-        geom.append((widths, line_w * scale, over_l * scale, over_r * scale, scale, align, wide, pre_w * scale))
+        geom.append((widths, line_w * scale, over_l * scale, over_r * scale, scale, align, wide, pre_w * scale,
+                     line_w, over_l, over_r, pre_w, extent))
     insets = alternate_insets(laid, geom, lay.alternate_indent * k, avail)
-    for ll, (widths, line_w, over_l, over_r, scale, align, wide, pre_x), inset in zip(laid, geom, insets):
-        ext = line_w + over_l + over_r
-        if align == "left":
-            # a wide line keeps its start while it can, else moves toward the left edge
-            start_x = max(edge_x, min(margin_h, W - edge_x - ext)) if wide else margin_h + inset
-            x0 = start_x + over_l
-        elif align == "right":
-            end_x = min(W - edge_x, max(W - margin_h, edge_x + ext)) if wide else W - margin_h - inset
-            x0 = end_x - over_r - line_w
-        else:  # centred, but its readings kept inside the margins (the edges for a wide line)
-            side = edge_x if wide else margin_h
-            lo, hi = side + over_l, W - side - over_r - line_w
-            x0 = min(max((W - line_w) / 2, lo), hi) if lo <= hi else (lo + hi) / 2
-        slot_top = block_top + ll.slot * (slot_h + spacing)
-        main_y = slot_top + ruby_h + main_size
-        # shrunk lines keep their bottom edge where it was
-        ruby_y = main_y - main_size * scale - gap * scale
-        line_top = (ruby_y - ruby_size * scale) if has_ruby else (main_y - main_size * scale)
-        room_above = spacing if ll.slot > top_row else line_top  # free room above the line (the ball)
-        fs = "" if scale >= 1.0 else f"\\fscx{scale * 100:.1f}\\fscy{scale * 100:.1f}"
-        spans = visible_spans(ll, style)
+    # the line being sung can be drawn larger: its window is cut into pieces, each with its own size
+    cur_mult = max(1.0, lay.current_scale / 100.0) if center else 1.0
+    cross = 130  # ms of cross-fade where a line changes size (the two copies overlap by this much)
+    for li, (ll, (widths, _lw, _ol, _or, scale, align, _wide, _px,
+                  line_w_r, over_l_r, over_r_r, pre_w_r, extent_r), inset) in enumerate(zip(laid, geom, insets)):
+        entry = float(li + 1) + entry_shift  # this line's place in the scrolling column
+        spans = [(ll.show_from, ll.show_to)] if center else visible_spans(ll, style)
         if len(spans) > 1:
             pause = (spans[1][0] - spans[0][1] + tm.hold_ms + tm.lead_in_ms) / 1000
             warnings.append(f"「{ll.line.text}」中间停顿约 {pause:.0f} 秒，停顿期间暂时隐藏该行")
-        body_x0 = x0 + pre_x  # the lyric itself, after what is written before it
-        cxs, x = [], body_x0
-        for w in widths:
-            cxs.append(x + w * scale / 2)
-            x += w * scale
-        for n_span, (t_from, t_to) in enumerate(spans):
-            # an ASS event cannot start before 0:00: start it there and time the sweep from there,
-            # or the fill would lag by what was cut off
-            t_from = max(t_from, -time_offset_ms)
-            if t_to <= t_from:
-                continue
-            fad = fade_tag(fade_in, fade_out, t_from, t_to, *_sung_within(ll, t_from, t_to))
-            bottom = main_y + ((trans_gap + trans_size) if (ll.translation and per_line_trans) else 0)
-            top = line_top
-            if ll.countdown_ms and n_span == 0:
-                top = emit_countdown(ll, t_from, body_x0, line_top, scale)
-            boxes.append((t_from + time_offset_ms, t_to + time_offset_ms, x0 - over_l, top,
-                          x0 + line_w + over_r, bottom))
-            runs = runs_of(ll, cxs, scale)
-            for c, cx, run in zip(ll.chunks, cxs, runs):
-                main_pos = f"\\an2\\pos({cx:.1f},{main_y:.1f}){fs}"
-                ruby_pos = f"\\an2\\pos({cx:.1f},{ruby_y:.1f}){fs}"
-                bw = m_main.width(c.base_text) * scale
-                rw = m_ruby.width(c.ruby_text) * scale if (c.ruby and m_ruby is not None) else 0.0
-                segs = piece_segments(c, cx, bw, int(t_from), m_main) if (main_follows or fx_on) else []
-                main_bands = bands_for(c.singers, cx, bw, main_y, main_size * scale, main_ink, run)
-                r_bands = ([BASE_BAND], [BASE_BAND])
-                if c.ruby and m_ruby is not None and ruby_bands:
-                    r_bands = bands_for(c.singers, cx, rw, ruby_y, ruby_size * scale, ruby_ink, run, ruby=True)
-                if main_follows:
-                    # lyric and ruby cut by one computed line: libass places its own \\kf boundary by
-                    # glyph ink, a few pixels away from any position computed outside it
-                    # once sung, the edges beyond the last glyph's advance (outline, glow) turn too
-                    hi = cx + bw / 2 + edge
-                    emit_following(L_MAIN, "KMain", t_from, t_to, main_pos, c.base_text, txt.color_unsung,
-                                   family, main_size, glow.size * k, True, segs, hi, fad, main_bands,
-                                   outline_sung=main_outline_sung)
+        # a line that already fills the room between the margins has no space to grow into
+        grew = min(scale * cur_mult, room / extent_r) if extent_r else scale
+        pieces: list[tuple[float, list[tuple[int, int]], int, int, bool]] = []
+        if grew <= scale + 0.005:
+            pieces.append((scale, spans, 0, 0, True))
+        else:
+            # the larger copy is laid out again rather than scaled at run time: its sweep and its singer
+            # colours are drawn from that layout, so a merely scaled copy would put them in the wrong place
+            cur_from = ll.start + time_offset_ms
+            cur_to = ll.end + time_offset_ms
+            for t_from, t_to in spans:
+                a, b = max(t_from, cur_from), min(t_to, cur_to)
+                if b <= a:  # nothing of this line is being sung here
+                    pieces.append((scale, [(t_from, t_to)], 0, 0, True))
+                    continue
+                a, b = int(round(a)), int(round(b))
+                # the pieces do not overlap: each one fades out as the next fades in, so the line is
+                # never drawn twice at once (two sizes on screen would read as a ghost)
+                before = (t_from, a) if a > t_from else None
+                after = (b, t_to) if t_to > b else None
+                if before:
+                    pieces.append((scale, [before], 0, cross, False))
+                if b > a:
+                    pieces.append((grew, [(a, b)], cross if before else 0, cross if after else 0,
+                                   not before and not after))
+                if after:
+                    pieces.append((scale, [after], cross, 0, False))
+        for sc, sl_spans, hfi, hfo, fx in pieces:
+            over_l, over_r = over_l_r * sc, over_r_r * sc
+            line_w, pre_x = line_w_r * sc, pre_w_r * sc
+            ext = line_w + over_l + over_r
+            wide = ext > avail + 0.5
+            if align == "left":
+                # a wide line keeps its start while it can, else moves toward the left edge
+                start_x = left_edge + (max(edge_x, min(margin_h, col_w - edge_x - ext)) if wide
+                                       else margin_h + inset)
+                x0 = start_x + over_l
+            elif align == "right":
+                end_x = (min(right_edge - edge_x, max(right_edge - margin_h, left_edge + edge_x + ext))
+                         if wide else right_edge - margin_h - inset)
+                x0 = end_x - over_r - line_w
+            else:  # centred, but its readings kept inside the margins (the edges for a wide line)
+                side = edge_x if wide else margin_h
+                lo, hi = left_edge + side + over_l, right_edge - side - over_r - line_w
+                x0 = min(max(center_x - line_w / 2, lo), hi) if lo <= hi else (lo + hi) / 2
+            if center:
+                # (the position follows the column — computed per span below, since it moves)
+                room_above = pitch
+            else:
+                slot_top = block_top + ll.slot * (slot_h + spacing)
+                main_y = slot_top + ruby_h + main_size
+                # shrunk lines keep their bottom edge where it was
+                ruby_y = main_y - main_size * sc - gap * sc
+                line_top = (ruby_y - ruby_size * sc) if has_ruby else (main_y - main_size * sc)
+                room_above = spacing if ll.slot > top_row else line_top  # free room above the line (the ball)
+            fs = "" if abs(sc - 1.0) < 1e-6 else f"\\fscx{sc * 100:.1f}\\fscy{sc * 100:.1f}"
+            body_x0 = x0 + pre_x  # the lyric itself, after what is written before it
+            cxs, x = [], body_x0
+            for w in widths:
+                cxs.append(x + w * sc / 2)
+                x += w * sc
+            for n_span, (t_from, t_to) in enumerate(sl_spans):
+                # an ASS event cannot start before 0:00: start it there and time the sweep from there,
+                # or the fill would lag by what was cut off
+                t_from = max(t_from, -time_offset_ms)
+                if t_to <= t_from:
+                    continue
+                # the column's scroll is piecewise-linear (a kink at every entry's anchor), so a line is
+                # drawn in one \move per stretch between anchors; its sweep is re-timed from each stretch.
+                if column:
+                    if stepped:
+                        # the staircase holds on an entry and only moves in the last step_ms before the
+                        # next anchor: cut at both ends of every ramp, or one long \move would smear the
+                        # hold into a slow drift and look exactly like "flow"
+                        stops = [t_from]
+                        for (ta, _), (tb, _) in zip(anchors, anchors[1:]):
+                            ramp = min(step_ms, tb - ta) if tb > ta else 0.0
+                            for c in (tb - ramp, tb):
+                                if t_from < c < t_to:
+                                    stops.append(c)
+                        cuts = sorted(set(stops + [t_to]))
+                    else:
+                        cuts = [t_from] + [ta for ta, _ in anchors if t_from < ta < t_to] + [t_to]
                 else:
-                    emit_text(L_MAIN, t_from, t_to, "KMain", main_pos, c.base, glow.size * k, True, family,
-                              main_size, fad, main_bands)
-                if c.ruby and following:
-                    hi = max(cx + bw / 2, cx + rw / 2) + edge
-                    emit_following(L_RUBY, "KRuby", t_from, t_to, ruby_pos, c.ruby_text, ruby_unsung, ruby_family,
-                                   ruby_size, glow.size * k * 0.55, glow.ruby, segs, hi, fad, r_bands,
-                                   outline_sung=ruby_outline_sung)
-                elif c.ruby:
-                    emit_text(L_RUBY, t_from, t_to, "KRuby", ruby_pos, c.ruby, glow.size * k * 0.55, glow.ruby,
-                              ruby_family, ruby_size, fad, r_bands)
-                if fx_on:
-                    group = f"{ll.line.id}@{t_from}"
-                    color = fx_color(c.singers)
-                    syllables += _syllables(c.base, cx, main_y, main_size, scale, m_main, family, False, t_from,
-                                            t_to, group, line_top, room_above, color=color)
-                    if c.ruby and style.effects.ruby and m_ruby is not None:
-                        # with the ruby following the lyric, a reading syllable is sung when the sweep
-                        # passes it, not at its own time
-                        timing = (lambda xa, xb: (int(t_from) + sweep_time(segs, xa, instant),
-                                                  int(t_from) + sweep_time(segs, xb, instant))) if following else None
-                        syllables += _syllables(c.ruby, cx, ruby_y, ruby_size, scale, m_ruby, ruby_family, True,
-                                                t_from, t_to, group, line_top, room_above, timing, color=color)
-            if ll.pre:
-                emit_tags(ll.pre, x0, main_y, scale, t_from, t_to, fad, True)
-            if ll.post:
-                emit_tags(ll.post, body_x0 + sum(widths) * scale, main_y, scale, t_from, t_to, fad, False)
-            if ll.translation and per_line_trans:
-                ty = main_y + trans_gap + trans_size
-                # a translation wider than the room between the margins is shrunk, and kept inside them
-                tw = m_trans.width(ll.translation) or 1.0
-                tfs = f"\\fscx{avail / tw * 100:.1f}\\fscy{avail / tw * 100:.1f}" if tw > avail else ""
-                tw = min(tw, avail)
-                an, tx = {"left": (1, max(margin_h, min(x0, W - margin_h - tw))),
-                          "right": (3, min(W - margin_h, max(x0 + line_w, margin_h + tw))),
-                          "center": (2, W / 2)}[align]
-                left = {1: tx, 3: tx - tw, 2: tx - tw / 2}[an]
-                emit_trans(t_from, t_to, f"\\an{an}\\pos({tx:.1f},{ty:.1f}){tfs}", ll.translation, fad,
-                           line_singers(ll), (left, left + tw))
+                    cuts = [t_from, t_to]
+                # the collision box is only approximate for a moving line: use where it starts
+                box_y = y_of(entry, t_from) if column else (
+                    read_y if center else main_y)
+                box_ruby_y = box_y - main_size * sc - gap * sc
+                box_line_top = (box_ruby_y - ruby_size * sc) if has_ruby else (box_y - main_size * sc)
+                box_bottom = box_y + ((trans_gap + trans_size) if (ll.translation and per_line_trans) else 0)
+                if ll.countdown_ms and n_span == 0:
+                    cd_from = float(ll.start - ll.countdown_ms)
+                    cd_top = box_line_top
+                    if column and cd_from > t_from:
+                        # the dots sit above the line where it waits for them (on the reading line)
+                        cd_y = y_of(entry, cd_from)
+                        cd_top = cd_y - main_size * sc - gap * sc - (ruby_size * sc if has_ruby else 0.0)
+                        box_line_top = cd_top
+                    box_line_top = emit_countdown(ll, max(cd_from, t_from), body_x0, cd_top, sc)
+                boxes.append((t_from + time_offset_ms, t_to + time_offset_ms, x0 - over_l, box_line_top,
+                              x0 + line_w + over_r, box_bottom))
+                runs = runs_of(ll, cxs, sc)
+                for j in range(len(cuts) - 1):
+                    a, b = cuts[j], cuts[j + 1]
+                    if b <= a:
+                        continue
+                    dy = 0.0
+                    if center:
+                        # the line travels with the column (flow, or a prompter with neighbours) or is pinned
+                        # on the reading line (a prompter that shows one line at a time)
+                        if column:
+                            main_y = y_of(entry, a)
+                            dy = y_of(entry, b) - main_y
+                        else:
+                            main_y = read_y
+                        ruby_y = main_y - main_size * sc - gap * sc
+                        line_top = (ruby_y - ruby_size * sc) if has_ruby else (main_y - main_size * sc)
+                    # ease in on the first stretch, out on the last (never while the line is sung)
+                    sung_from, sung_to = _sung_within(ll, a, b)
+                    fi = int(max(0.0, min(fade_in, sung_from - a))) if j == 0 else 0
+                    fo = int(max(0.0, min(fade_out, b - sung_to))) if j == len(cuts) - 2 else 0
+                    if j == 0:
+                        fi = max(fi, hfi)  # a piece that changes size cross-fades into its neighbour
+                    if j == len(cuts) - 2:
+                        fo = max(fo, hfo)
+                    fad = f"\\fad({fi},{fo})" if (fi or fo) else ""
+                    if center and pitch and (lay.inactive_dim or lay.edge_fade):
+                        # the lines that are not being sung step back, and fade out at the frame's edges
+                        d0 = abs(main_y - read_y) / pitch
+                        d1 = abs(main_y + dy - read_y) / pitch
+                        a0, a1 = _fade_alpha(d0, lay.inactive_dim, fade_from), _fade_alpha(d1, lay.inactive_dim, fade_from)
+                        if a0 >= 4 or a1 >= 4:
+                            h0, h1 = int(round(a0)), int(round(a1))
+                            fad += (f"\\alpha&H{h0:02X}&" if abs(h1 - h0) < 3
+                                    else f"\\alpha&H{h0:02X}&\\t(0,{int(b - a)},\\alpha&H{h1:02X}&)")
+                    for c, cx, run in zip(ll.chunks, cxs, runs):
+                        if center and dy:
+                            main_pos = (f"\\an2\\move({cx:.1f},{main_y:.1f},{cx:.1f},{main_y + dy:.1f},0,"
+                                        f"{int(b - a)}){fs}")
+                            ruby_pos = (f"\\an2\\move({cx:.1f},{ruby_y:.1f},{cx:.1f},{ruby_y + dy:.1f},0,"
+                                        f"{int(b - a)}){fs}")
+                        else:
+                            main_pos = f"\\an2\\pos({cx:.1f},{main_y:.1f}){fs}"
+                            ruby_pos = f"\\an2\\pos({cx:.1f},{ruby_y:.1f}){fs}"
+                        bw = m_main.width(c.base_text) * sc
+                        rw = m_ruby.width(c.ruby_text) * sc if (c.ruby and m_ruby is not None) else 0.0
+                        segs = piece_segments(c, cx, bw, int(a), m_main) if (main_follows or (fx_on and fx)) else []
+                        main_bands = bands_for(c.singers, cx, bw, main_y, main_size * sc, main_ink, run)
+                        r_bands = ([BASE_BAND], [BASE_BAND])
+                        if c.ruby and m_ruby is not None and ruby_bands:
+                            r_bands = bands_for(c.singers, cx, rw, ruby_y, ruby_size * sc, ruby_ink, run, ruby=True)
+                        if main_follows:
+                            # lyric and ruby cut by one computed line: libass places its own \\kf boundary by
+                            # glyph ink, a few pixels away from any position computed outside it
+                            # once sung, the edges beyond the last glyph's advance (outline, glow) turn too
+                            hi = cx + bw / 2 + edge
+                            emit_following(L_MAIN, "KMain", a, b, main_pos, c.base_text, txt.color_unsung,
+                                           family, main_size, glow.size * k, True, segs, hi, fad, main_bands,
+                                           outline_sung=main_outline_sung, dy=dy)
+                        else:
+                            emit_text(L_MAIN, a, b, "KMain", main_pos, c.base, glow.size * k, True, family,
+                                      main_size, fad, main_bands, dy=dy)
+                        if c.ruby and following:
+                            hi = max(cx + bw / 2, cx + rw / 2) + edge
+                            emit_following(L_RUBY, "KRuby", a, b, ruby_pos, c.ruby_text, ruby_unsung, ruby_family,
+                                           ruby_size, glow.size * k * 0.55, glow.ruby, segs, hi, fad, r_bands,
+                                           outline_sung=ruby_outline_sung, dy=dy)
+                        elif c.ruby:
+                            emit_text(L_RUBY, a, b, "KRuby", ruby_pos, c.ruby, glow.size * k * 0.55, glow.ruby,
+                                      ruby_family, ruby_size, fad, r_bands, dy=dy)
+                        if fx_on and fx:
+                            group = f"{ll.line.id}@{a}"
+                            color = fx_color(c.singers)
+                            syllables += _syllables(c.base, cx, main_y, main_size, sc, m_main, family, False, a,
+                                                    b, group, line_top, room_above, color=color)
+                            if c.ruby and style.effects.ruby and m_ruby is not None:
+                                # with the ruby following the lyric, a reading syllable is sung when the sweep
+                                # passes it, not at its own time
+                                timing = (lambda xa, xb: (int(a) + sweep_time(segs, xa, instant),
+                                                          int(a) + sweep_time(segs, xb, instant))) if following else None
+                                syllables += _syllables(c.ruby, cx, ruby_y, ruby_size, sc, m_ruby, ruby_family, True,
+                                                        a, b, group, line_top, room_above, timing, color=color)
+                    if ll.pre:
+                        emit_tags(ll.pre, x0, main_y, sc, a, b, fad, True, dy)
+                    if ll.post:
+                        emit_tags(ll.post, body_x0 + sum(widths) * sc, main_y, sc, a, b, fad, False, dy)
+                    if ll.translation and per_line_trans:
+                        ty = main_y + trans_gap + trans_size
+                        # a translation wider than the room between the margins is shrunk, and kept inside them
+                        tw = m_trans.width(ll.translation) or 1.0
+                        tfs = f"\\fscx{avail / tw * 100:.1f}\\fscy{avail / tw * 100:.1f}" if tw > avail else ""
+                        tw = min(tw, avail)
+                        an, tx = {"left": (1, max(margin_h, min(x0, right_edge - margin_h - tw))),
+                                  "right": (3, min(right_edge - margin_h, max(x0 + line_w, margin_h + tw))),
+                                  "center": (2, center_x)}[align]
+                        left = {1: tx, 3: tx - tw, 2: tx - tw / 2}[an]
+                        if center and dy:
+                            tpos = f"\\an{an}\\move({tx:.1f},{ty:.1f},{tx:.1f},{ty + dy:.1f},0,{int(b - a)}){tfs}"
+                        else:
+                            tpos = f"\\an{an}\\pos({tx:.1f},{ty:.1f}){tfs}"
+                        emit_trans(a, b, tpos, ll.translation, fad, line_singers(ll), (left, left + tw))
 
     if tr.enabled and not per_line_trans:
         fad = f"\\fad({fade_in},{fade_out})" if (fade_in or fade_out) else ""
@@ -1498,16 +1814,110 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
             events.append(f"Dialogue: {layer},{ass_time(t0 + time_offset_ms)},{ass_time(t1 + time_offset_ms)},"
                           f"KFx,,0,0,0,,{{{tags}}}{body}")
 
+    # the centred column's title and credits: in the flow of the lyrics (placement "column"), or under
+    # the cover panel of a split background (placement "cover").  The corner card is skipped there.
+    legend_pts: Optional[list[tuple[float, float]]] = None
+    if card_slot is not None and (title_lines or credit_lines):
+        x_center, card_w, card_top, card_bottom = card_slot
+        under_panel = info_place == "cover"
+        anchor = "top" if under_panel else "center"
+        max_h = max(0.0, card_bottom - card_top)
+
+        def col_pts(entry: float, t0: float, t1: float) -> list[tuple[float, float]]:
+            """(video time, y) of ``entry`` through its window, piecewise-linear with the column."""
+            pts = [(t0, y_of(entry, t0 - audio_offset_ms))]
+            for ta, _ in anchors:
+                tv = ta + audio_offset_ms
+                if t0 < tv < t1:
+                    pts.append((tv, y_of(entry, ta)))
+            pts.append((t1, y_of(entry, t1 - audio_offset_ms)))
+            return pts
+
+        # under the cover panel there is no column to leave the frame: the info stays for the whole
+        # song, the credits (when there are any) taking over for the outro
+        panel_y = card_top if under_panel else None
+        song_t1 = song_end if song_end is not None else max(0.0, info.start_ms + audio_offset_ms) + info.duration_ms
+        credits_t0 = song_t1 - info.outro_duration_ms
+        if (not credit_lines or not info.outro or not orig_duration
+                or orig_duration - info.outro_duration_ms <= info.start_ms + info.duration_ms):
+            credits_t0 = None
+
+        if title_lines:
+            t0 = max(0.0, info.start_ms + audio_offset_ms)
+            t1 = t0 + info.duration_ms
+            if panel_y is not None:
+                t1 = credits_t0 if credits_t0 is not None else song_t1
+            elif lay.center_scroll == "prompter":
+                # the card owns the reading line until the first lyric has to appear (that lyric waited
+                # for the card, see the prompter windows above); no room for both, there is no card
+                t1 = prompter_card_t1 if prompter_card_t1 is not None else t0 - 1.0
+            if panel_y is not None:
+                pts = [(t0, panel_y), (t1, panel_y)]
+            elif lay.center_scroll == "flow":
+                pts = col_pts(0.0, t0, t1)
+            else:
+                pts = [(t0, read_y), (t1, read_y)]
+            if t1 > t0:
+                events += centered_block(title_lines, style, W, H, k, family, pts, x_center, anchor=anchor,
+                                         width=card_w, max_h=max_h)
+                # the legend goes right under the title and moves with it (in the column it flows like a lyric;
+                # under the cover panel the title is anchored by its top, so the whole height is used)
+                title_h = block_height(title_lines, style, W, k, family, card_w)
+                off = (title_h if under_panel else title_h / 2) + 18 * k
+                legend_pts = [(t, y + off) for t, y in pts]
+        if credits_t0 is not None:
+            t1 = song_t1
+            t0 = credits_t0
+            ce = float(len(laid) + 1) + entry_shift
+            if panel_y is None and lay.center_scroll == "prompter" and not stepped and laid:
+                # the credits wait for the last lyric to leave the reading line
+                t0 = max(t0, laid[-1].show_to + time_offset_ms)
+            if panel_y is not None:
+                pts = [(t0, panel_y), (t1, panel_y)]
+            elif lay.center_scroll == "flow":
+                pts = col_pts(ce, t0, t1)
+            else:
+                pts = [(t0, read_y), (t1, read_y)]
+            if t0 < t1:
+                events += centered_block(credit_lines, style, W, H, k, family, pts, x_center, anchor=anchor,
+                                         width=card_w, max_h=max_h)
+
+    # "repeat": the corner card again in the long stretches with no lyric on screen (an instrumental),
+    # so the song's name comes back before the end
+    repeat_at: list[tuple[float, float]] = []
+    if info_place == "corner" and info.enabled and info.mode == "repeat" and laid:
+        spans = sorted((ll.show_from + time_offset_ms, ll.show_to + time_offset_ms) for ll in laid)
+        merged: list[list[float]] = []
+        for a, b in spans:
+            if merged and a <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], b)
+            else:
+                merged.append([a, b])
+        first_free = max(0.0, info.start_ms + audio_offset_ms) + info.duration_ms
+        last_free = (song_end - info.outro_duration_ms) if (info.outro and song_end is not None) else float("inf")
+        for (_prev_from, a1), (b0, _next_to) in zip(merged, merged[1:]):
+            if b0 - a1 < info.repeat_gap_ms:
+                continue
+            a = max(a1 + 400, first_free)
+            b = min(b0 - 400, a + info.duration_ms, last_free)
+            if b - a >= 1000:
+                repeat_at.append((a, b))
+
     # the title card: in its corner at the top, narrowed (wrapped) to keep clear of what else is drawn;
-    # the same card again at the end of the song
-    orig = project.asset("original")
-    song_end = (orig.duration_ms + audio_offset_ms) if orig is not None and orig.duration_ms else None
+    # the same card again at the end of the song (skipped in centre mode, where it is in the column)
     events += info_events(project, style, W, H, k, family, audio_offset_ms, boxes=boxes, warnings=warnings,
-                          end_ms=song_end)
+                          end_ms=song_end, repeat_at=repeat_at)
     if tagger.missing:
         warnings.append(f"字幕样式里有 {len(tagger.missing)} 张图片在这台电脑上找不到（样式可能来自别处），已略过")
-    # who each colour is: right after the title card
-    events += legend_events(project, style, W, H, k, family, audio_offset_ms, boxes=boxes, warnings=warnings)
+    # who each colour is: right after the title card (with it: in the column, or under the cover panel)
+    legend_slot = None
+    if legend_pts is not None:
+        legend_slot = (card_slot[0] if card_slot is not None else center_x,
+                       card_slot[1] if card_slot is not None else avail, legend_pts[0][1])
+    events += legend_events(project, style, W, H, k, family, audio_offset_ms, boxes=boxes, warnings=warnings,
+                            slot=legend_slot, pts=legend_pts)
+    # how far into the audio the video is: a thin line along one edge (for a frame with no background)
+    events += progress_events(style, W, H, k, max(0.0, audio_offset_ms), col_end)
 
     shadow_back = ass_color(txt.shadow_color, 100 - txt.shadow_opacity)
 

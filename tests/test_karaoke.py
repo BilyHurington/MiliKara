@@ -223,6 +223,213 @@ def test_build_ass_from_alignment(tmp_path):
     assert out.filename == "karaoke.ass" and out.content == text
 
 
+def test_center_scrolling_flow(tmp_path):
+    h = _project(tmp_path)
+    st = h.project.karaoke
+    st.layout.position = "center"
+    st.layout.center_scroll = "flow"
+    st.info.enabled = True
+    st.info.placement = "column"
+    st.info.fields = ["title", "artist"]
+    h.project.lyrics.meta.title = "窓に舞う桜"
+    h.project.lyrics.meta.artist = "歌い手"
+    h.save()
+    text, warnings = S.karaoke_ass(h)
+    assert not warnings
+    assert "\\move(" in text  # the column scrolls
+    assert ",KInfo," in text and "窓に舞う桜" in text  # the title rides in the column
+    # the first lyric reaches the reading line exactly as it is sung (its anchor), then drifts up
+    read_y = 0.46 * 1080
+    ends = []
+    for l in text.splitlines():
+        if l.startswith("Dialogue") and ",KMain," in l and "窓" in l:
+            m = re.search(r"\\move\([\d.]+,([\d.]+),[\d.]+,([\d.]+),0,(\d+)\)", l)
+            if m:
+                ends.append((float(m.group(1)), float(m.group(2)), int(m.group(3))))
+    assert ends and any(abs(e2 - read_y) < 0.6 for _, e2, _ in ends)
+    # more than the active row rides the column: both lines are already on screen before anything is
+    # sung (they flow up from the bottom), rather than appearing only as their own turn comes
+    def _ass_ms(t: str) -> int:
+        hh, mm, sscc = t.split(":")
+        ss, cc = sscc.split(".")
+        return ((int(hh) * 60 + int(mm)) * 60 + int(ss)) * 1000 + int(cc) * 10
+    visible = set()
+    for l in text.splitlines():
+        if l.startswith("Dialogue") and ",KMain," in l and "\\k" in l:
+            p = l.split(",", 9)
+            if _ass_ms(p[1]) <= 500 <= _ass_ms(p[2]):
+                key = next((k for k in ("窓", "君") if k in p[9]), None)
+                if key:
+                    visible.add(key)
+    assert visible == {"窓", "君"}
+
+
+def test_center_scrolling_prompter(tmp_path):
+    h = _project(tmp_path)
+    st = h.project.karaoke
+    st.layout.position = "center"
+    st.layout.center_scroll = "prompter"
+    st.layout.prompter_neighbors = False  # one line at a time: only the sung line owns the frame
+    st.info.enabled = True
+    st.info.placement = "column"
+    h.save()
+    text, warnings = S.karaoke_ass(h)
+    assert not warnings
+    assert "\\move(" not in text  # every entry is pinned on the reading line and cross-fades
+    read_y = 0.46 * 1080
+    pinned = [l for l in text.splitlines()
+              if l.startswith("Dialogue") and ",KMain," in l and f"\\pos(960.0,{read_y:.1f})" in l]
+    assert pinned  # the sung line sits exactly on the reading line
+
+
+def _pos_y(line: str) -> float:
+    m = re.search(r"\\(?:pos|move)\([\d.]+,([\d.]+)", line)
+    return float(m.group(1)) if m else -1.0
+
+
+def _k_main_rows_at(text: str, t_ms: int) -> dict[int, set[str]]:
+    def _ms(t: str) -> int:
+        hh, mm, sscc = t.split(":")
+        ss, cc = sscc.split(".")
+        return ((int(hh) * 60 + int(mm)) * 60 + int(ss)) * 1000 + int(cc) * 10
+
+    rows: dict[int, set[str]] = {}
+    for l in text.splitlines():
+        if not l.startswith("Dialogue") or ",KMain," not in l:
+            continue
+        p = l.split(",", 9)
+        if not (_ms(p[1]) <= t_ms < _ms(p[2])):
+            continue
+        alpha = re.search(r"\\alpha&H([0-9A-F]{2})&", p[9])
+        rows.setdefault(int(round(_pos_y(l))), set()).add(alpha.group(1) if alpha else "none")
+    return rows
+
+
+def _k_main_fscx_at(text: str, t_ms: int) -> dict[int, float]:
+
+    def _ms(t: str) -> int:
+        hh, mm, sscc = t.split(":")
+        ss, cc = sscc.split(".")
+        return ((int(hh) * 60 + int(mm)) * 60 + int(ss)) * 1000 + int(cc) * 10
+
+    sizes: dict[int, float] = {}
+    for l in text.splitlines():
+        if not l.startswith("Dialogue") or ",KMain," not in l:
+            continue
+        p = l.split(",", 9)
+        if not (_ms(p[1]) <= t_ms < _ms(p[2])):
+            continue
+        m = re.search(r"\\fscx([\d.]+)", p[9])
+        sizes[int(round(_pos_y(l)))] = float(m.group(1)) if m else 100.0
+    return sizes
+
+
+def test_a_prompter_keeps_the_neighbouring_lines_on_screen(tmp_path):
+    h = _project(tmp_path)
+    st = h.project.karaoke
+    st.layout.position = "center"
+    st.layout.center_scroll = "prompter"  # prompter_neighbors defaults to on
+    h.save()
+    text, _ = S.karaoke_ass(h)
+    read_y = 0.46 * 1080
+    rows = _k_main_rows_at(text, 1400)  # while the first line is being sung
+    assert int(round(read_y)) in rows  # the sung line is pinned on the reading line
+    assert len(rows) > 1  # and the line after it is already visible below, not hidden until its turn
+    # the column steps up a line at a time instead of sliding continuously: every \move is a short
+    # ramp (at most the length of a step), never one long glide that would read as "flow"
+    moves = []
+    for m in re.finditer(r"\\move\(([^)]*)\)", text):
+        args = [float(v) for v in m.group(1).split(",")]
+        if len(args) >= 6:  # x1,y1,x2,y2,t1,t2 — a move with times, not a plain jump
+            moves.append(int(args[5] - args[4]))
+    assert moves  # it does move
+    assert max(moves) <= 400  # but only in short steps
+
+
+def test_the_lines_not_being_sung_step_back_and_fade_at_the_edges(tmp_path):
+    h = _project(tmp_path)
+    st = h.project.karaoke
+    st.layout.position = "center"
+    st.layout.inactive_dim = 45
+    h.save()
+    text, _ = S.karaoke_ass(h)
+    read_y = int(round(0.46 * 1080))
+    rows = _k_main_rows_at(text, 1400)
+    assert rows[read_y] == {"00"}  # the line being sung stays at full strength
+    dimmed = [a for y, a in rows.items() if y != read_y]
+    assert dimmed and any("73" in a for a in dimmed)  # 45% back
+    # turning both off leaves the column with no transparency of its own
+    st.layout.inactive_dim = 0
+    st.layout.edge_fade = False
+    h.save()
+    text, _ = S.karaoke_ass(h)
+    assert "\\alpha&H" not in text
+
+
+def test_the_line_being_sung_is_drawn_larger(tmp_path):
+    h = _project(tmp_path)
+    st = h.project.karaoke
+    st.layout.position = "center"
+    st.layout.current_scale = 140
+    h.save()
+    text, _ = S.karaoke_ass(h)
+    read_y = int(round(0.46 * 1080))
+    sizes = _k_main_fscx_at(text, 1400)  # while the first line is being sung
+    # the sung line is laid out again at the larger size, so its sweep stays on the glyphs
+    assert sizes[read_y] == pytest.approx(140.0)
+    assert [v for y, v in sizes.items() if y != read_y] == [pytest.approx(100.0)] * (len(sizes) - 1)
+    # it is the enlarged copy that fades in and out, so the two sizes are never on screen together
+    assert "\\fad(130,0)" in text or "\\fad(0,130)" in text
+    st.layout.current_scale = 100  # off
+    h.save()
+    text, _ = S.karaoke_ass(h)
+    assert "fscx" not in text
+def test_center_scrolling_split_keeps_lyrics_off_the_cover_panel(tmp_path):
+    h = _project(tmp_path)
+    st = h.project.karaoke
+    st.layout.position = "center"
+    st.layout.center_scroll = "prompter"
+    st.background.mode = "split"  # no explicit background: the style itself renders the cover panel
+    st.background.side = "left"
+    h.save()
+    text, warnings = S.karaoke_ass(h)
+    assert not warnings
+    # the cover panel takes the left 36%; the lyric column centres on the remaining 64%, not the frame
+    panel = round(1920 * 0.36)
+    center_x = panel + (1920 - panel) / 2
+    read_y = 0.46 * 1080
+    pinned = [l for l in text.splitlines()
+              if l.startswith("Dialogue") and ",KMain," in l and f"\\pos({center_x:.1f},{read_y:.1f})" in l]
+    assert pinned  # the sung line sits on the reading line, off the cover panel
+    assert not any(f"\\pos(960.0,{read_y:.1f})" in l for l in text.splitlines()
+                   if l.startswith("Dialogue") and ",KMain," in l)  # never full-width centred
+
+
+def test_info_under_the_cover_panel_stays_for_the_whole_song(tmp_path):
+    h = _project(tmp_path)
+    st = h.project.karaoke
+    st.layout.position = "center"
+    st.info.enabled = True
+    st.info.placement = "cover"  # under the cover panel of a split background
+    st.info.fields = ["title", "artist"]
+    st.background.mode = "split"  # the panel comes from the style: no explicit background
+    h.project.lyrics.meta.title = "窓に舞う桜"
+    h.project.lyrics.meta.artist = "歌い手"
+    h.save()
+    text, warnings = S.karaoke_ass(h)
+    assert not warnings
+    from kara_align.karaoke.cover import split_geometry
+
+    geo = split_geometry((1920, 1080), "left")
+    panel_x = geo["cx"] + geo["side_len"] / 2
+    info = [l for l in text.splitlines() if l.startswith("Dialogue") and ",KInfo," in l]
+    assert len(info) == 2  # the title and the artist, once: no corner card as well
+    assert "窓に舞う桜" in info[0] and "歌い手" in info[1]
+    # under the cover panel (not in a corner), from the start of the song to its end
+    assert all(f"\\pos({panel_x:.1f}," in l for l in info)
+    assert [l.split(",")[1:3] for l in info] == [["0:00:00.50", "0:00:07.00"]] * 2
+
+
 def test_style_is_saved_and_validated(tmp_path):
     h = _project(tmp_path)
     st = h.project.karaoke.model_dump()

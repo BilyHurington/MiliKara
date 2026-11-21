@@ -200,6 +200,45 @@ def test_following_sweep_bands_partition_each_chunk(tmp_path):
             assert s_[0] == "0" and u[2] == "1920" and u[0] == s_[2] and u[1] == s_[1] and u[3] == s_[3]
 
 
+def test_band_clip_travels_with_a_scrolling_line():
+    rect = (150, 400, 250, 600)
+    # a line scrolling 100 px up over 1 s: the band's edges travel with it (a fixed cut would let the
+    # band's edge drift through the glyphs)
+    assert A.band_clip([], rect, True, 400.0, dy=-100.0,
+                       dur=1000) == "\\clip(150,400,250,600)\\t(0,1000,\\clip(150,300,250,500))"
+    # inside a sweep: every step of the animation carries the shift of its own moment, and the band's edge
+    # keeps travelling with the line once the sweep has left it
+    tags = A.band_clip([(0, 1000, 300.0)], rect, True, 400.0, dy=-100.0, dur=1000)
+    assert tags == ("\\clip(150,400,150,600)"
+                    "\\t(500,833,\\clip(150,317,250,517))\\t(833,1000,\\clip(150,300,250,500))")
+
+
+def test_band_cuts_travel_with_the_scrolling_line():
+    from .test_round5_render import _line, _project as _render_project, _seg
+
+    p, r = _render_project([_line([_seg("窓", "まど"), _seg("に", "に")])], times={0: (8000, 400)})
+    p.lyrics.lines[0].singers = [1, 2]
+    st = KaraokeStyle()
+    st.layout.position, st.layout.center_scroll = "center", "flow"
+    st.singers.members = [KaraokeSinger(name="Ann", color="#ED35B3"), KaraokeSinger(name="Bo", color="#2F80ED")]
+    st.singers.mix, st.singers.direction = "split", "vertical"
+    text, warnings = A.build_ass(p, r, st)
+    assert not warnings
+    moving = [e for e in text.splitlines()
+              if e.startswith("Dialogue:") and ",KMain_" in e and "\\move(" in e and "}に" in e]
+    assert len(moving) == 2  # に, sung by both: one copy per band
+    ends = []
+    for e in moving:
+        y_from, y_to, dur = re.search(r"\\move\([\d.]+,([\d.]+),[\d.]+,([\d.]+),0,(\d+)\)", e).groups()
+        dy = round(float(y_to) - float(y_from))
+        assert dy < 0 and f"\\t(0,{dur}," in e  # the cut animates over the same stretch as the move
+        (a0, a1), (b0, b1) = [(int(m[1]), int(m[3])) for m in re.findall(r"\\clip\((\d+),(-?\d+),(\d+),(-?\d+)\)", e)]
+        assert b0 - a0 == dy and b1 - a1 == dy
+        ends.append((a0, a1, b0, b1))
+    # the two bands meet at one edge: where they start and where they end
+    assert ends[0][1] == ends[1][0] and ends[0][3] == ends[1][2]
+
+
 def test_band_clip_follows_the_sweep_only_inside_the_band():
     moves = [(0, 1, 100.0), (0, 1000, 300.0), (1000, 1001, 400.0)]
     tags = A.band_clip(moves, (150, 0, 250, 1080), True, 400.0)

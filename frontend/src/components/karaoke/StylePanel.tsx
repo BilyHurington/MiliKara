@@ -5,8 +5,8 @@
 // style; the parent decides how to save it.
 
 import {
-  Check, Download, Languages, Music, Palette, Plus, RotateCcw, Save, Sparkles, Timer, Trash2, Type, X,
-  LayoutTemplate, CaseSensitive,
+  Check, Download, Image as ImageIcon, Languages, Music, Palette, Plus, RotateCcw, Save, Sparkles, Timer, Trash2, Type, X,
+  LayoutTemplate, CaseSensitive, Gauge,
 } from 'lucide-react';
 import { Children, isValidElement, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { cn } from '@/lib/format';
@@ -22,9 +22,51 @@ import { HelpButton } from '@/components/guide/Help';
 import { COUNTDOWN_DEFAULTS } from '@/lib/countdown';
 
 const DECOR_DEFAULTS: NonNullable<KaraokeStyle['decor']> = { start: '', end: '', color: '', size_pct: 80, start_picture: '', end_picture: '' };
+const BG_DEFAULTS: NonNullable<KaraokeStyle['background']> = { mode: 'none', blur: 45, dim: 50, side: 'left' };
+const PROGRESS_DEFAULTS: NonNullable<KaraokeStyle['progress']> = { enabled: false, position: 'bottom', thickness: 6, color: '', opacity: 80 };
 
-export type SectionId = 'colors' | 'text' | 'ruby' | 'translation' | 'info' | 'layout' | 'timing' | 'effects';
-const SECTION_IDS: SectionId[] = ['colors', 'text', 'ruby', 'translation', 'info', 'layout', 'timing', 'effects'];
+/** One-click bundles for a centred column: the entry point for what most people want, and the
+ *  sliders below stay the source of truth (a bundle is just a set of values written into them). */
+const CENTER_PRESETS: { id: string; label: string; title: string; set: Partial<KaraokeStyle['layout']> }[] = [
+  { id: 'flow', label: '流动', title: '歌名、歌词、结尾制作人排成一列，平滑向上流动',
+    set: { center_scroll: 'flow', prompter_neighbors: true, reading_line: 0.46, inactive_dim: 55, edge_fade: true, current_scale: 100 } },
+  { id: 'prompter', label: '读唱线', title: '正在唱的一行钉在读唱线上，其余行从上下流过，邻句也看得见',
+    set: { center_scroll: 'prompter', prompter_neighbors: true, reading_line: 0.46, inactive_dim: 55, edge_fade: true, current_scale: 100 } },
+  { id: 'emphasis', label: '强调当前行', title: '流动 + 正在唱的一行画大一些，其余行淡下去（卡拉OK 常见做法）',
+    set: { center_scroll: 'flow', prompter_neighbors: true, reading_line: 0.46, inactive_dim: 55, edge_fade: true, current_scale: 130 } },
+  { id: 'single', label: '极简', title: '整屏只留正在唱的一行（常见的字幕机样子）',
+    set: { center_scroll: 'prompter', prompter_neighbors: false, reading_line: 0.46, inactive_dim: 0, edge_fade: true, current_scale: 100 } },
+];
+
+/** what the backend uses when a field is missing, so an older style still matches a bundle */
+const LAYOUT_FALLBACK: Record<string, number | string | boolean> = {
+  center_scroll: 'flow', reading_line: 0.46, inactive_dim: 55, edge_fade: true, prompter_neighbors: true, current_scale: 100,
+};
+
+/** which bundle the layout currently matches (null: a custom mix) */
+function centerPreset(L: KaraokeStyle['layout']): string | null {
+  const all = L as unknown as Record<string, number | string | boolean | undefined>;
+  const hit = CENTER_PRESETS.find((p) => Object.entries(p.set).every(([k, v]) => (all[k] ?? LAYOUT_FALLBACK[k]) === v));
+  return hit ? hit.id : null;
+}
+
+function posName(L: KaraokeStyle['layout']): string {
+  if (L.position === 'center') return L.center_scroll === 'prompter' ? '读唱线居中' : '居中流动';
+  return L.position === 'bottom' ? '靠底' : '靠顶';
+}
+
+function infoPlaceLabel(I: KaraokeStyle['info'], L: KaraokeStyle['layout'], bg: NonNullable<KaraokeStyle['background']>): string {
+  const place = I.placement ?? 'auto';
+  const corner = I.position === 'top-left' ? '左上角' : '右上角';
+  const front = L.position === 'center' && bg.mode === 'split';
+  if (place === 'corner') return corner;
+  if (L.position !== 'center') return place === 'auto' ? corner : `${place === 'cover' ? '封面下方' : '随歌词流动'}（居中时）`;
+  if (place === 'cover' || (place === 'auto' && front)) return front ? '封面下方' : '随歌词流动';
+  return '随歌词流动';
+}
+
+export type SectionId = 'colors' | 'text' | 'ruby' | 'translation' | 'info' | 'layout' | 'timing' | 'effects' | 'background' | 'progress';
+const SECTION_IDS: SectionId[] = ['colors', 'text', 'ruby', 'translation', 'info', 'layout', 'timing', 'effects', 'background', 'progress'];
 type Patch = (fn: (s: KaraokeStyle) => void) => void;
 
 export interface TranslationInfo {
@@ -135,7 +177,7 @@ function SectionTabs({ active, onSelect, fill, children }: {
   return (
     <>
       <div ref={tabs} role="tablist" aria-label="样式分类" onKeyDown={(e) => arrowNav(e, 'tab')}
-        className="grid grid-cols-4 gap-1 rounded-xl bg-surface-2 p-1 @xl:grid-cols-8">
+        className="grid grid-cols-4 gap-1 rounded-xl bg-surface-2 p-1 @xl:grid-cols-10">
         {items.map((c) => {
           const on = c === current;
           return (
@@ -195,11 +237,16 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
     if (next.theme && themedLook(next) !== themedLook(style)) next.theme = null;
     onChange(next);
   };
-  const { layout: L, text: T, ruby: R, translation: Tr, glow: G, timing: M, effects: E, info: I } = style;
+  const { layout: L, text: T, ruby: R, translation: Tr, glow: G, timing: M, effects: E, info: I, background: BG } = style;
+  const preset = centerPreset(L);
   const C = style.countdown ?? COUNTDOWN_DEFAULTS;
   const D = style.decor ?? DECOR_DEFAULTS;
+  const bg = BG ?? BG_DEFAULTS;
+  const P = style.progress ?? PROGRESS_DEFAULTS;
+  const setProgress = (fn: (pr: NonNullable<KaraokeStyle['progress']>) => void) => patch((s) => { s.progress = { ...P }; fn(s.progress); });
   const setDecor = (fn: (d: NonNullable<KaraokeStyle['decor']>) => void) => patch((s) => { s.decor = { ...D }; fn(s.decor); });
   const setCd = (fn: (c: NonNullable<KaraokeStyle['countdown']>) => void) => patch((s) => { s.countdown = { ...C }; fn(s.countdown); });
+  const setBg = (fn: (b: NonNullable<KaraokeStyle['background']>) => void) => patch((s) => { s.background = { ...bg }; fn(s.background); });
   const posLabel = { opposite: L.position === 'bottom' ? '画面顶部' : '画面底部', block: '歌词旁', line: '每行下方' };
   const sec = (id: SectionId) => ({ id });
 
@@ -362,32 +409,69 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
         </Section>
 
         <Section {...sec('info')} icon={<Music className="size-4" />} title="歌曲信息"
-          summary={I.enabled ? `${I.position === 'top-left' ? '左上角' : '右上角'} · ${songInfo?.data?.text != null ? '自定义文字' : I.fields.map((f) => FIELD_LABEL[f]).join(' / ')} · ${I.duration_ms / 1000}s${(I.outro ?? true) ? ` · 结尾 ${(I.outro_duration_ms ?? 7000) / 1000}s` : ''}` : '关闭'}>
+          summary={I.enabled ? `${infoPlaceLabel(I, L, bg)} · ${songInfo?.data?.text != null ? '自定义文字' : I.fields.map((f) => FIELD_LABEL[f]).join(' / ')} · ${I.duration_ms / 1000}s${(I.outro ?? true) ? ` · 结尾 ${(I.outro_duration_ms ?? 7000) / 1000}s` : ''}` : '关闭'}>
           <InfoEditor style={style} patch={patch} songInfo={songInfo} />
         </Section>
 
         <Section {...sec('layout')} icon={<LayoutTemplate className="size-4" />} title="布局"
-          summary={`${L.position === 'bottom' ? '靠底' : '靠顶'} · ${L.lines} 行${L.lines > 1 ? (L.arrangement === 'alternate' ? '左右交替' : '居中') : ''} · 边距 ${L.margin_v}`}>
+          summary={`${posName(L)}${L.position === 'center' ? ` · ${CENTER_PRESETS.find((p) => p.id === preset)?.label ?? '自定义'}` : ''} · ${L.lines} 行${L.lines > 1 && L.position !== 'center' ? (L.arrangement === 'alternate' ? '左右交替' : '居中') : ''} · ${L.position === 'center' ? `读唱线 ${Math.round((L.reading_line ?? 0.46) * 100)}%` : `边距 ${L.margin_v}`}`}>
           <Row label="位置">
             <Segmented value={L.position} onChange={(v) => patch((s) => { s.layout.position = v; })}
-              options={[{ value: 'bottom', label: '靠底' }, { value: 'top', label: '靠顶' }]} />
+              options={[{ value: 'bottom', label: '靠底' }, { value: 'top', label: '靠顶' }, { value: 'center', label: '居中' }]} />
           </Row>
+          {L.position === 'center' && (
+            <Row label="快速开始" hint={preset ? '下面的滑块随时可以单独再调（调过就显示为自定义）'
+              : '当前是自定义组合；点一个预设可以回到常用搭配'}>
+              <Segmented label="居中预设" className="flex-wrap" value={preset ?? ''} onChange={(v) => {
+                const p = CENTER_PRESETS.find((x) => x.id === v);
+                if (p) patch((s) => { Object.assign(s.layout, p.set); });
+              }} options={CENTER_PRESETS.map((p) => ({ value: p.id, label: p.label, title: p.title }))} />
+            </Row>
+          )}
+          {L.position === 'center' && (
+            <>
+              <Row label="滚动方式" hint={(L.center_scroll ?? 'flow') === 'flow' ? '歌名、歌词、结尾制作人一起居中，平滑向上流动' : '正在唱的一行钉在读唱线上，其余行从上下流过（字幕机式）'}>
+                <Segmented value={L.center_scroll ?? 'flow'} onChange={(v) => patch((s) => { s.layout.center_scroll = v; })}
+                  options={[{ value: 'flow', label: '流动' }, { value: 'prompter', label: '读唱线' }]} />
+              </Row>
+              <Row label="读唱线" hint="当前行所在的位置（画面高度的百分比）">
+                <Num name="读唱线" unit="%" value={Math.round((L.reading_line ?? 0.46) * 100)} min={20} max={80}
+                  onChange={(v) => patch((s) => { s.layout.reading_line = v / 100; })} />
+              </Row>
+              {(L.center_scroll ?? 'flow') === 'prompter' && (
+                <Switch checked={L.prompter_neighbors ?? true} onChange={(v) => patch((s) => { s.layout.prompter_neighbors = v; })}
+                  label={<span className="font-medium">上下邻句也显示<span className="ml-1 text-xs text-muted">关掉时整屏只留正在唱的一行</span></span>} />
+              )}
+              <Row label="其它行变暗" hint="不是正在唱的行淡下去，当前句更醒目；0 = 都一样亮">
+                <Num name="其它行变暗" unit="%" value={L.inactive_dim ?? 55} max={90}
+                  onChange={(v) => patch((s) => { s.layout.inactive_dim = v; })} />
+              </Row>
+              <Switch checked={L.edge_fade ?? true} onChange={(v) => patch((s) => { s.layout.edge_fade = v; })}
+                label={<span className="font-medium">上下边缘渐隐<span className="ml-1 text-xs text-muted">歌词滚出画面时淡出，而不是被边缘切断</span></span>} />
+              <Row label="正在唱的一行放大" hint={(L.current_scale ?? 100) <= 100 ? '100% = 不放大' : '正在唱的一行画得更大；放不下时不会超过左右边距'}>
+                <Num name="当前行放大" unit="%" value={L.current_scale ?? 100} min={100} max={160}
+                  onChange={(v) => patch((s) => { s.layout.current_scale = v; })} />
+              </Row>
+            </>
+          )}
           <Row label="同屏行数" hint={L.lines > 1 ? '下一行提前出现在另一行的位置，便于跟唱' : '每次只显示正在唱的一行'}>
             <Segmented value={String(L.lines)} onChange={(v) => patch((s) => { s.layout.lines = Number(v); })}
               options={[{ value: '1', label: '1 行' }, { value: '2', label: '2 行' }, { value: '3', label: '3 行' }]} />
           </Row>
-          {L.lines > 1 && (
+          {L.lines > 1 && L.position !== 'center' && (
             <Row label="排列">
               <Segmented value={L.arrangement} onChange={(v) => patch((s) => { s.layout.arrangement = v; })}
                 options={[{ value: 'alternate', label: '左右交替' }, { value: 'center', label: '全部居中' }]} />
             </Row>
           )}
-          <Row label="与画面边缘的距离"><Num name="纵向边距" value={L.margin_v} max={400} onChange={(v) => patch((s) => { s.layout.margin_v = v; })} /></Row>
+          {L.position !== 'center' && (
+            <Row label="与画面边缘的距离"><Num name="纵向边距" value={L.margin_v} max={400} onChange={(v) => patch((s) => { s.layout.margin_v = v; })} /></Row>
+          )}
           {L.lines > 1 && <Row label="行与行的间距"><Num name="行间距" value={L.line_spacing} max={200} onChange={(v) => patch((s) => { s.layout.line_spacing = v; })} /></Row>}
           <Row label="左右边距" hint="歌词最宽可以用到的范围：画面宽度 − 两侧边距">
             <Num name="左右边距" value={L.margin_h} max={600} onChange={(v) => patch((s) => { s.layout.margin_h = v; })} />
           </Row>
-          {L.lines > 1 && L.arrangement === 'alternate' && (
+          {L.lines > 1 && L.arrangement === 'alternate' && L.position !== 'center' && (
             <Row label="交替行向中间缩进" hint="短句不会分到两端；放不下的长句自动退回边距处">
               <Num name="向中间缩进" value={L.alternate_indent} max={800} onChange={(v) => patch((s) => { s.layout.alternate_indent = v; })} />
             </Row>
@@ -450,6 +534,46 @@ export function StylePanel({ style, onChange, fonts, defaultFont, defaultSection
         <Section {...sec('effects')} icon={<Sparkles className="size-4" />} title="特效"
           summary={E.kind === 'none' ? '无' : `${EFFECTS[E.kind].label}${E.ruby ? ' · 注音也有' : ''}`}>
           <EffectsEditor style={style} patch={patch} />
+        </Section>
+
+        <Section {...sec('background')} icon={<ImageIcon className="size-4" />} title="背景"
+          summary={bg.mode === 'split' ? `封面分栏（${bg.side === 'left' ? '左' : '右'}）` : bg.mode === 'blur' ? `封面模糊 · 压暗 ${bg.dim}` : '纯黑 / 视频画面'}>
+          <Row label="没有视频、照片时" hint="点「用歌曲封面」把歌曲封面做成背景，就用这里选的样式">
+            <Segmented value={bg.mode} onChange={(v) => setBg((b) => { b.mode = v; })}
+              options={[{ value: 'none', label: '不用封面' }, { value: 'blur', label: '全屏模糊' }, { value: 'split', label: '左右分栏' }]} />
+          </Row>
+          {bg.mode === 'blur' && (
+            <>
+              <Row label="模糊" hint="把封面打散，只留下氛围">
+                <Num name="模糊" unit="%" value={bg.blur} max={100} onChange={(v) => setBg((b) => { b.blur = v; })} />
+              </Row>
+              <Row label="压暗" hint="一层黑色遮罩——让歌词在封面上清楚的关键">
+                <Num name="压暗" unit="%" value={bg.dim} max={100} onChange={(v) => setBg((b) => { b.dim = v; })} />
+              </Row>
+            </>
+          )}
+          {bg.mode === 'split' && (
+            <Row label="封面在哪侧" hint="歌词、歌名在另一侧居中滚动">
+              <Segmented value={bg.side} onChange={(v) => setBg((b) => { b.side = v; })}
+                options={[{ value: 'left', label: '左侧' }, { value: 'right', label: '右侧' }]} />
+            </Row>
+          )}
+        </Section>
+
+        <Section {...sec('progress')} icon={<Gauge className="size-4" />} title="进度"
+          summary={P.enabled ? `细线 · ${P.position === 'top' ? '顶部' : '底部'} · ${P.thickness}px` : '关闭'}>
+          <Switch checked={P.enabled} onChange={(v) => setProgress((pr) => { pr.enabled = v; })} label="显示播放进度（画面边缘的一条细线）" />
+          <div className={cn('space-y-4', !P.enabled && 'pointer-events-none opacity-45')}>
+            <Row label="位置" hint="没有背景时，一条细线能让空画面不那么静">
+              <Segmented value={P.position} onChange={(v) => setProgress((pr) => { pr.position = v; })}
+                options={[{ value: 'bottom', label: '底部' }, { value: 'top', label: '顶部' }]} />
+            </Row>
+            <Row label="粗细"><Num name="进度线粗细" unit="px" value={P.thickness} min={2} max={24} onChange={(v) => setProgress((pr) => { pr.thickness = v; })} /></Row>
+            <Row label="不透明度"><Num name="进度线不透明度" unit="%" value={P.opacity} min={10} max={100} onChange={(v) => setProgress((pr) => { pr.opacity = v; })} /></Row>
+            <Row label="颜色" hint="留空 = 用已唱歌词的颜色">
+              <ColorRow label="进度线" value={P.color} onChange={(v) => setProgress((pr) => { pr.color = v; })} />
+            </Row>
+          </div>
         </Section>
         </SectionTabs>
       </div>
@@ -649,6 +773,9 @@ function InfoEditor({ style, patch, songInfo }: { style: KaraokeStyle; patch: Pa
   const I = style.info;
   const data = songInfo?.data ?? null;
   const custom = data?.text ?? null;
+  // in a centre column the card rides with the lyrics (or sits under the cover panel), so the "when"
+  // choices — which only move the corner card — do not apply
+  const cornerCard = !(style.layout.position === 'center' && (I.placement ?? 'auto') !== 'corner');
   const toggleField = (f: SongInfoField, on: boolean) => patch((s) => {
     const set = new Set(s.info.fields);
     if (on) set.add(f); else set.delete(f);
@@ -657,11 +784,33 @@ function InfoEditor({ style, patch, songInfo }: { style: KaraokeStyle; patch: Pa
   return (
     <>
       <Switch checked={I.enabled} onChange={(v) => patch((s) => { s.info.enabled = v; })} label="显示歌曲信息（开头，以及结尾）" />
-      <div className={cn('space-y-4', !I.enabled && 'pointer-events-none opacity-45')}>
-        <Row label="位置">
-          <Segmented value={I.position} onChange={(v) => patch((s) => { s.info.position = v; })}
-            options={[{ value: 'top-left', label: '左上角' }, { value: 'top-right', label: '右上角' }]} />
+      {cornerCard && (
+        <Row label="何时显示" hint={(I.mode ?? 'start') === 'start' ? '按下面的时长：开头一次、结尾一次'
+          : (I.mode ?? 'start') === 'persist' ? '从出现时间一直显示到歌曲结束（不避让歌词）'
+            : '开头、结尾照常；中间长时间没有歌词（间奏）时再来一次'}>
+          <Segmented value={I.mode ?? 'start'} onChange={(v) => patch((s) => { s.info.mode = v; })}
+            options={[{ value: 'start', label: '开头/结尾' }, { value: 'persist', label: '整首常驻' }, { value: 'repeat', label: '间奏再来' }]} />
         </Row>
+      )}
+      {cornerCard && (I.mode ?? 'start') === 'repeat' && (
+        <Row label="间奏多长才再显示" hint="画面上连续这么久没有歌词（至少 1.5 秒）">
+          <Num name="间奏再显示" unit="ms" value={I.repeat_gap_ms ?? 5000} min={1500} max={60000} step={500}
+            onChange={(v) => patch((s) => { s.info.repeat_gap_ms = v; })} />
+        </Row>
+      )}
+      <div className={cn('space-y-4', !I.enabled && 'pointer-events-none opacity-45')}>
+        <Row label="显示位置" hint={(I.placement ?? 'auto') === 'auto' ? '跟着布局走：居中滚动时在歌词里，分栏背景时在封面下，其余在角落'
+          : (I.placement ?? 'auto') === 'corner' ? '固定在画面角落（居中滚动时歌词会从旁边经过）'
+            : '只在居中模式下生效：随歌词流动，或分栏时放在封面下方；其余时候回到角落'}>
+          <Segmented value={I.placement ?? 'auto'} onChange={(v) => patch((s) => { s.info.placement = v; })}
+            options={[{ value: 'auto', label: '自动' }, { value: 'column', label: '随歌词' }, { value: 'cover', label: '封面下' }, { value: 'corner', label: '角落' }]} />
+        </Row>
+        {(I.placement ?? 'auto') === 'corner' && (
+          <Row label="角落">
+            <Segmented value={I.position} onChange={(v) => patch((s) => { s.info.position = v; })}
+              options={[{ value: 'top-left', label: '左上角' }, { value: 'top-right', label: '右上角' }]} />
+          </Row>
+        )}
         <Row label="显示哪些行" hint={custom !== null ? '正在使用下面的自定义文字，勾选暂不生效'
           : data ? '没有数据的行不会显示' : '每首歌有数据的行才会显示（来自音乐平台和歌词里的“作词：…”等行）'}>
           <div className={cn('grid gap-1.5 @xs:grid-cols-2', custom !== null && 'opacity-45')}>
@@ -680,11 +829,18 @@ function InfoEditor({ style, patch, songInfo }: { style: KaraokeStyle; patch: Pa
         </Row>
         {songInfo && data && <InfoText auto={autoInfoText(I.fields, data.fields)} custom={custom} onText={songInfo.onText} />}
         <Row label="标题字号" hint="其余各行约为标题的一半多一点"><Num name="标题字号" value={I.size} min={20} max={120} onChange={(v) => patch((s) => { s.info.size = v; })} /></Row>
-        <Row label="与画面边缘的距离"><Num name="信息边距" value={I.margin} max={200} onChange={(v) => patch((s) => { s.info.margin = v; })} /></Row>
+        <Row label="副行不透明度" hint="标题下面那几行（歌手、作词…）；100% 与标题一样亮"><Num name="副行不透明度" unit="%" value={I.sub_opacity ?? 90} min={20} max={100}
+          onChange={(v) => patch((s) => { s.info.sub_opacity = v; })} /></Row>
+        <Switch checked={I.plate ?? false} onChange={(v) => patch((s) => { s.info.plate = v; })} label="卡片后面加一层深色底衬（画面很花时更好读）" />
+        {!(style.layout.position === 'center' && (I.placement ?? 'auto') !== 'corner') && (
+          <Row label="与画面边缘的距离"><Num name="信息边距" value={I.margin} max={200} onChange={(v) => patch((s) => { s.info.margin = v; })} /></Row>
+        )}
         <Row label="出现时间" hint="从音频开头算起"><Num name="信息出现时间" unit="ms" value={I.start_ms} max={10000} step={100} onChange={(v) => patch((s) => { s.info.start_ms = v; })} /></Row>
-        <Row label="显示多久" hint="顶部要出现歌词或翻译时会提前淡出（至少显示 2 秒）">
-          <Num name="信息显示时长" unit="ms" value={I.duration_ms} min={1000} max={20000} step={500} onChange={(v) => patch((s) => { s.info.duration_ms = v; })} />
-        </Row>
+        {(I.mode ?? 'start') !== 'persist' && (
+          <Row label="显示多久" hint="顶部要出现歌词或翻译时会提前淡出（至少显示 2 秒）">
+            <Num name="信息显示时长" unit="ms" value={I.duration_ms} min={1000} max={20000} step={500} onChange={(v) => patch((s) => { s.info.duration_ms = v; })} />
+          </Row>
+        )}
         <Switch checked={I.outro ?? true} onChange={(v) => patch((s) => { s.info.outro = v; })} label="结尾也显示（同样的内容和样式，一直显示到歌曲结束）" />
         {(I.outro ?? true) && (
           <Row label="结尾显示多久" hint="从歌曲结束往前算；顶部最后一句歌词或翻译消失后才出现（至少显示 2 秒）">

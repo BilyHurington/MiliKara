@@ -989,6 +989,7 @@ def test_audio_with_lyrics_from_a_link_gets_the_cover_as_its_picture(tmp_path, m
     h = q.ws.get(t.project_id)
     assert h.project.background is not None and h.project.background.filename == "歌曲封面（模糊背景）.jpg"
     # no cover to be had: a note, and the black picture
+    S._raw_cover.cache_clear()  # the failed fetch must be attempted, not served from the cache
     monkeypatch.setattr(C, "fetch_cover", lambda url: (_ for _ in ()).throw(C.CoverError("无法下载封面（HTTP 404）")))
     t2 = _wait(q, q.add(media=_wav(tmp_path / "s2.wav"), filename="s2.wav", lyrics="https://music.163.com/song?id=7",
                         mode="plain").id)
