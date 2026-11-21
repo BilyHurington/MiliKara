@@ -335,8 +335,15 @@ def test_a_prompter_keeps_the_neighbouring_lines_on_screen(tmp_path):
     rows = _k_main_rows_at(text, 1400)  # while the first line is being sung
     assert int(round(read_y)) in rows  # the sung line is pinned on the reading line
     assert len(rows) > 1  # and the line after it is already visible below, not hidden until its turn
-    # the column steps up a line at a time instead of sliding continuously
-    assert "\\move(" in text
+    # the column steps up a line at a time instead of sliding continuously: every \move is a short
+    # ramp (at most the length of a step), never one long glide that would read as "flow"
+    moves = []
+    for m in re.finditer(r"\\move\(([^)]*)\)", text):
+        args = [float(v) for v in m.group(1).split(",")]
+        if len(args) >= 6:  # x1,y1,x2,y2,t1,t2 — a move with times, not a plain jump
+            moves.append(int(args[5] - args[4]))
+    assert moves  # it does move
+    assert max(moves) <= 400  # but only in short steps
 
 
 def test_the_lines_not_being_sung_step_back_and_fade_at_the_edges(tmp_path):

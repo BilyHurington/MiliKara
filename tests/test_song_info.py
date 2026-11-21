@@ -131,3 +131,21 @@ def test_a_prompter_card_keeps_the_reading_line_until_the_first_lyric():
     assert {_span(line) for line in cards} == {(500, 5650)}  # up to the first lyric, less its fade-out
     first = min(_span(line)[0] for line in text.splitlines() if ",KMain," in line)
     assert first == 5650  # the lyric waited for the card instead of sharing the reading line
+
+
+def _y_start(line) -> float:
+    m = re.search(r"\\move\([-\d.]+,([-\d.]+),", line) or re.search(r"\\pos\([-\d.]+,([-\d.]+)\)", line)
+    return float(m.group(1))
+
+
+def test_the_first_lyric_keeps_clear_of_the_title_card():
+    p, r, st = _song(two_lines=True, times={0: (1000, 300), 1: (12_000, 300)})
+    st.layout.position = "center"
+    text = A.build_ass(p, r, st)[0]
+    card_y = max(_y_start(line) for line in text.splitlines() if ",KInfo," in line)
+    rows = sorted({_y_start(line) for line in text.splitlines() if ",KMain," in line})
+    assert len(rows) >= 2
+    # the card sits on the reading line, so the first lyric starts on the row below it: never squeezed
+    # against the card's last row (and its countdown dots, which ride above the lyric)
+    below = [y for y in rows if y > card_y]
+    assert below and below[0] - card_y >= (rows[1] - rows[0]) * 0.5

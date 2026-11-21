@@ -1161,7 +1161,12 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
         legs = legend_entries(project, style)
         below_card = card_h / 2 + (block_height([r[0] for r in legs], style, W, k, family, card_slot[1]) + 18 * k
                                    if legs else 0.0)
-        entry_shift = max(0, math.ceil(below_card / pitch - 0.7))
+        if laid and laid[0].countdown_ms:
+            # the first line's countdown dots ride above its ruby: keep them clear of the card as well
+            below_card += main_size * k * 0.12 * 2.9
+        # the card sits on the reading line, so the first lyric starts on the row below it: any card that
+        # reaches past the line takes at least one row
+        entry_shift = max(0, math.ceil(below_card / pitch - 0.2))
     anchors: list[tuple[float, float]] = []  # (song time, entry index)
     if title_lines and card_slot is not None:
         anchors.append((max(0.0, float(info.start_ms)), 0.0))
@@ -1664,7 +1669,19 @@ def build_ass(project: Project, result: AlignmentResult, style: Optional[Karaoke
                 # the column's scroll is piecewise-linear (a kink at every entry's anchor), so a line is
                 # drawn in one \move per stretch between anchors; its sweep is re-timed from each stretch.
                 if column:
-                    cuts = [t_from] + [ta for ta, _ in anchors if t_from < ta < t_to] + [t_to]
+                    if stepped:
+                        # the staircase holds on an entry and only moves in the last step_ms before the
+                        # next anchor: cut at both ends of every ramp, or one long \move would smear the
+                        # hold into a slow drift and look exactly like "flow"
+                        stops = [t_from]
+                        for (ta, _), (tb, _) in zip(anchors, anchors[1:]):
+                            ramp = min(step_ms, tb - ta) if tb > ta else 0.0
+                            for c in (tb - ramp, tb):
+                                if t_from < c < t_to:
+                                    stops.append(c)
+                        cuts = sorted(set(stops + [t_to]))
+                    else:
+                        cuts = [t_from] + [ta for ta, _ in anchors if t_from < ta < t_to] + [t_to]
                 else:
                     cuts = [t_from, t_to]
                 # the collision box is only approximate for a moving line: use where it starts
