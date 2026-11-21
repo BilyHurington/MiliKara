@@ -69,6 +69,30 @@ def test_a_line_with_a_countdown_appears_as_its_countdown_begins():
     assert [ll.start - ll.show_from for ll in laid] == [5000, 5000, 1000]
 
 
+def test_centre_column_waits_on_the_reading_line_while_the_dots_go():
+    from .test_round5_render import _line, _project as _render_project, _seg
+
+    # the first line is sung from 8.0 s, so its 3 dots go at 5.0 / 6.0 / 7.0 s
+    p, r = _render_project([_line([_seg("窓", "まど"), _seg("に", "に")])], times={0: (8000, 300)})
+    st = KaraokeStyle()
+    st.layout.position = "center"
+    st.layout.center_scroll = "flow"
+    text, warnings = A.build_ass(p, r, st)
+    assert not warnings
+    read_y = 0.46 * 1080
+    # (the lyrics run 150 ms early: 5.0 s shows as 4.85 s, 8.0 s as 7.85 s)
+    held = [l for l in text.splitlines()
+            if l.startswith("Dialogue") and ",KMain," in l and l.split(",")[1:3] == ["0:00:04.85", "0:00:07.85"]]
+    # the column stands still with the line on the reading line for the whole countdown, so the dots
+    # never run over a moving lyric
+    assert held and all(f"\\pos({x},{read_y:.1f})" in l
+                        for l in held for x in re.findall(r"\\pos\(([\d.]+),", l))
+    dots = [l for l in text.splitlines() if ",KDots," in l]
+    assert len(dots) == 3 and all(l.split(",")[1] == "0:00:04.85" for l in dots)  # as the countdown begins
+    ys = [float(re.search(r"\\pos\([\d.]+,([\d.]+)\)", l).group(1)) for l in dots]
+    assert all(y < read_y - 10 for y in ys)  # above the line, not over it
+
+
 def test_per_line_setting(tmp_path):
     h = _project(tmp_path)
     l1, l2 = h.project.lyrics.lines

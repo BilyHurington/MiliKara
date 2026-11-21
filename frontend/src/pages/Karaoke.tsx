@@ -417,7 +417,7 @@ function BackgroundControl({ pic }: { pic: PictureInfo }) {
     setCoverBusy(true);
     try {
       setPV(await api.post<ProjectView>(ppath('/background/cover'), {}));
-      toast('ok', '已用歌曲封面做背景', '封面模糊铺满画面，封面本身在上方居中');
+      toast('ok', '已用歌曲封面做背景', '按样式里「背景」的设定：全屏模糊或左右分栏');
     } finally { setCoverBusy(false); }
   }, '无法使用封面');
   const hasCover = useApp((s) => !!s.pv?.view.cover);
@@ -438,7 +438,7 @@ function BackgroundControl({ pic }: { pic: PictureInfo }) {
         </Button>
         {hasCover && (
           <Button size="xs" variant="outline" loading={coverBusy} icon={<Disc3 className="size-3.5" />} onClick={() => void fromCover()}
-            title="从歌词所用的音乐链接取封面：模糊后铺满画面，封面本身放在上方居中">
+            title="取歌曲封面（来自音乐链接或歌曲文件本身），按样式里「背景」的设定做成全屏模糊或左右分栏">
             用歌曲封面
           </Button>
         )}

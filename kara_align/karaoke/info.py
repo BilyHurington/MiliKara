@@ -25,7 +25,7 @@ from __future__ import annotations
 import re
 from typing import Optional, Sequence
 
-from ..models import KaraokeStyle, Project
+from ..models import KaraokeSongInfo, KaraokeStyle, Project
 from .fonts import BUNDLED_JP, HAN_FAMILIES, Measurer, covering
 
 LABELS = {"title": "歌名", "artist": "歌手", "album": "专辑", "lyricist": "作词", "composer": "作曲", "arranger": "编曲"}
@@ -35,7 +35,7 @@ _CREDIT = {"lyricist": re.compile(r"作词|作詞|^[词詞]|lyric|written", re.I
            "composer": re.compile(r"作曲|^曲$|[词詞]曲|compos|music", re.I)}
 _LABEL = re.compile(r"^\s*([^:：]{1,16}?)\s*[:：]\s*(.+?)\s*$")
 
-L_INFO_GLOW, L_INFO = 8, 9
+L_CARD_PLATE, L_INFO_GLOW, L_INFO = 8, 8, 9  # the plate shares the glow's layer, drawn before it
 _IN_MS, _OUT_MS, _STAGGER, _BAR_MS = 450, 400, 90, 380  # slide in / out, between lines, bar grow / shrink
 _BAR = 6  # accent bar width (px at 1920 wide)
 
@@ -71,6 +71,22 @@ def info_lines(project: Project, style: KaraokeStyle) -> list[str]:
     if project.song_info_text is not None:
         return [x.strip() for x in project.song_info_text.splitlines() if x.strip()]
     return auto_lines(project, style)
+
+
+def column_lines(project: Project, style: KaraokeStyle) -> tuple[list[str], list[str]]:
+    """The opening title (title / artist / album) and the closing credits (作词 / 作曲 / 编曲) for the
+    centred scrolling column (``placement="column"``).  A project's own text is one block (no credits)."""
+    if project.song_info_text is not None:
+        return info_lines(project, style), []
+    fields = song_fields(project)
+    title, credits = [], []
+    for f in style.info.fields:
+        v = fields.get(f)
+        if not v:
+            continue
+        line = f"{LABELS[f]}：{v}" if f in ("lyricist", "composer", "arranger") else v
+        (credits if f in ("lyricist", "composer", "arranger") else title).append(line)
+    return title, credits
 
 
 # where a card line may wrap: after a space / "・" / "/", or before a bracket, a tilde or " - " —
@@ -123,27 +139,79 @@ def wrap_text(text: str, width, max_w: float) -> list[str]:
     return rows or [""]
 
 
+def placement_of(project: Project, style: KaraokeStyle) -> str:
+    """Where the song-info card is drawn: "corner", "column" (with the lyrics) or "cover" (under the
+    cover panel of a split background).  "auto" — the default — picks what the frame offers: the panel
+    when there is one, else the scrolling column in the centre layout, else a corner.  A pick that
+    does not apply where it is asked for falls back to a corner (there is no panel, or no column)."""
+    from .cover import split_side
+
+    pick = style.info.placement
+    if pick == "corner":
+        return "corner"
+    centre = style.layout.position == "center"
+    front = centre and split_side(project, style) is not None  # only the centre layout has the panel
+    if pick == "cover":
+        return "cover" if front else "corner"
+    if pick == "column":
+        return "column" if centre else "corner"
+    return "cover" if front else ("column" if centre else "corner")
+
+
+def _sub_alpha(info: KaraokeSongInfo) -> str:
+    """Tag making the smaller lines lighter than the title: ``info.sub_opacity`` % of the colour."""
+    if info.sub_opacity >= 100:
+        return ""
+    return f"\\1a&H{int(round(255 * (1 - info.sub_opacity / 100))):02X}&"
+
+
+def _plate(x0: float, y0: float, x1: float, y1: float, k: float, t0: float, t1: float, *,
+           dy: float = 0.0, dur: int = 0, fad: str = "", alpha: int = 0x78) -> str:
+    """A soft dark plate behind the card, so its text stays readable over a blurred cover: one
+    rectangle, its edges blurred, at ``alpha`` (0x00 = opaque … 0xFF = invisible).  It travels with the
+    card: ``dy`` over ``dur`` ms."""
+    pad = 16 * k
+    w, h = max(1.0, x1 - x0 + 2 * pad), max(1.0, y1 - y0 + 2 * pad)
+    rect = f"m 0 0 l {w:.1f} 0 l {w:.1f} {h:.1f} l 0 {h:.1f}"
+    px, py = x0 - pad, y0 - pad
+    where = (f"\\move({px:.1f},{py:.1f},{px:.1f},{py + dy:.1f},0,{dur})" if (dy and dur > 0)
+             else f"\\pos({px:.1f},{py:.1f})")
+    return _dialogue(L_CARD_PLATE, t0, t1,
+                     f"\\an7{where}\\bord0\\shad0\\blur{max(1.0, 10 * k):.1f}\\1c&H000000&\\1a&H{alpha:02X}&{fad}",
+                     f"{{\\p1}}{rect}{{\\p0}}")
+
+
 def info_events(project: Project, style: KaraokeStyle, W: int, H: int, k: float, family: str,
                 time_offset_ms: float, *,
                 boxes: Sequence[tuple[float, float, float, float, float, float]] = (),
-                warnings: Optional[list[str]] = None, end_ms: Optional[float] = None) -> list[str]:
+                warnings: Optional[list[str]] = None, end_ms: Optional[float] = None,
+                repeat_at: Sequence[tuple[float, float]] = ()) -> list[str]:
     """Dialogue lines of the card (style ``KInfo``) in its corner at the top, for its whole
     duration: when a translation or lyric (``boxes``: (from, to, x0, y0, x1, y1) of what else is
     drawn) would be where the card is, the card gets narrower (its lines wrap) so it ends before it.
-    ``end_ms`` (the end of the song on the subtitles' timeline): the ending card too."""
+    ``end_ms`` (the end of the song on the subtitles' timeline): the ending card too; ``repeat_at``
+    ((from, to) on that timeline): extra showings, in the long stretches with no lyric on screen."""
     info = style.info
     lines = info_lines(project, style)
     if not info.enabled or not lines:
         return []
+    if placement_of(project, style) != "corner":
+        return []  # drawn with the lyrics by build_ass (in the column, or under the cover panel)
     # a title / album with characters the lyric font lacks: a font with all of them (Windows: libass would
     # fill them in from a font of its own, at another size)
     family = covering(family, style.text.bold, _text_of("".join(lines)), [BUNDLED_JP, *HAN_FAMILIES])
     t0 = max(0.0, info.start_ms + time_offset_ms)
-    t1 = t0 + info.duration_ms
-    events = _card(lines, style, W, H, k, family, t0, t1, boxes, warnings, at_end=False)
+    # "persist" keeps the card up from its start time to the end of the song; otherwise it goes after
+    # duration_ms (the ending card, when there is one, starting where it left off)
+    t1 = end_ms if (info.mode == "persist" and end_ms is not None) else t0 + info.duration_ms
+    # "persist" is the user's ask for the card to stay: it is not moved out of the lyrics' way
+    events = _card(lines, style, W, H, k, family, t0, t1, () if info.mode == "persist" else boxes, warnings,
+                   at_end=False)
     if info.outro and end_ms is not None and end_ms - info.outro_duration_ms > t1:
         events += _card(lines, style, W, H, k, family, end_ms - info.outro_duration_ms, end_ms, boxes, warnings,
                         at_end=True)
+    for a, b in repeat_at:
+        events += _card(lines, style, W, H, k, family, a, b, boxes, warnings, at_end=False)
     return events
 
 
@@ -194,19 +262,31 @@ def legend_entries(project: Project, style: KaraokeStyle) -> list[tuple[str, lis
 def legend_events(project: Project, style: KaraokeStyle, W: int, H: int, k: float, family: str,
                   time_offset_ms: float, *,
                   boxes: Sequence[tuple[float, float, float, float, float, float]] = (),
-                  warnings: Optional[list[str]] = None) -> list[str]:
-    """The legend card: right after the opening song card (else at its start time), for ``legend_ms``."""
+                  warnings: Optional[list[str]] = None,
+                  slot: Optional[tuple[float, float, float]] = None,
+                  pts: Optional[Sequence[tuple[float, float]]] = None) -> list[str]:
+    """The legend card: right after the opening song card (else at its start time), for ``legend_ms``.
+    ``slot`` (x centre, width, top): drawn with the lyrics — in the column, or under the cover panel —
+    instead of in the corner.  ``pts``: the waypoints to move along (the column's motion)."""
     rows = legend_entries(project, style)
     if not rows:
         return []
-    info = style.info
     # names: in one font that has all their characters (not filled in from another, in another style)
     family = covering(family, style.text.bold, _text_of("".join(r[0] for r in rows)), [BUNDLED_JP, *HAN_FAMILIES],
                       whole=True)
+    info = style.info
     t0 = max(0.0, info.start_ms + time_offset_ms)
     if info.enabled and info_lines(project, style):
         t0 += info.duration_ms
-    return _card([r[0] for r in rows], style, W, H, k, family, t0, t0 + style.singers.legend_ms, boxes, warnings,
+    t1 = t0 + style.singers.legend_ms
+    if slot is not None:
+        x_center, width, top = slot
+        waypoints = list(pts) if pts is not None else [(t0, top), (t1, top)]
+        top = waypoints[0][1] if pts is not None else top
+        return centered_block([r[0] for r in rows], style, W, H, k, family, waypoints, x_center,
+                              anchor="top", width=width, max_h=max(0.0, H - top - 12 * k),
+                              swatches=[(r[1], r[2]) for r in rows], pictures=[r[3] for r in rows])
+    return _card([r[0] for r in rows], style, W, H, k, family, t0, t1, boxes, warnings,
                  at_end=False, swatches=[(r[1], r[2]) for r in rows], pictures=[r[3] for r in rows], what="分色列表")
 
 
@@ -229,6 +309,7 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
         title_size = sub_size = max(18 * k, info.size * k * 0.66)
         bar_w = sub_size * 0.72
     gap = 14 * k
+    sub_alpha_tag = _sub_alpha(info)
     # singers' pictures: a column between the swatches and the names (all names start at one x)
     from .pictures import aspect, drawing, emoji_font, split_emoji
 
@@ -368,7 +449,7 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
                                        f"\\3a&H{int(round(255 * (1 - glow.strength / 100))):02X}&"
                                        f"\\bord{glow.size * k * (0.7 if level == 0 else 0.5):.1f}"
                                        f"\\blur{glow.blur * k:.1f}\\shad0"))
-        sub_alpha = "" if level == 0 else "\\1a&H18&"
+        sub_alpha = "" if level == 0 else sub_alpha_tag
         looks.append((L_INFO, f"\\1c{color}{sub_alpha}\\3c{outline_c}"
                               f"\\bord{txt.outline * k * (0.7 if level == 0 else 0.55):.2f}"
                               f"\\shad{txt.shadow * k * 0.6:.2f}"))
@@ -406,6 +487,11 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
                     slid(layer, x, y, f"\\an7{font}", look, _escape(t))
             x += w
     bar_x = (W - margin - bar_w) if right else margin
+    if info.plate:
+        # a soft dark plate behind the card, so it stays readable over a blurred cover
+        span = max(0.0, reach - slide_room)
+        px0 = (W - margin - span) if right else margin
+        events.append(_plate(px0, top, px0 + span, top + block_h, k, t0, t1, fad="\\fad(350,300)"))
     if pictures and col:
         # the singers' pictures, between the swatches and the names, in and out with their rows
         for i, (_, size, _, _, y, _, line, first) in enumerate(placed):
@@ -453,6 +539,165 @@ def _card(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, famil
     return events
 
 
+# a row of a centred block: (text, size, bold, level, entry, first of its entry, text width,
+# width of what is drawn before the text — the swatch and/or picture of a legend row)
+_BlockRow = tuple[str, float, bool, int, int, bool, float, float]
+
+
+def _block_rows(lines: list[str], style: KaraokeStyle, k: float, family: str, max_w: float, scale: float = 1.0,
+                swatches: Optional[Sequence[tuple[list[str], str]]] = None,
+                pictures: Optional[Sequence[str]] = None) -> list[_BlockRow]:
+    """``lines`` wrapped (and the smaller ones set smaller than the first), each row measured."""
+    from .pictures import aspect
+
+    info, txt = style.info, style.text
+    legend = swatches is not None
+    out: list[_BlockRow] = []
+    for i, text in enumerate(lines):
+        if legend:
+            size = max(18 * k, info.size * k * 0.66) * scale
+            bold = False
+        else:
+            size = (info.size * k if i == 0 else max(18 * k, info.size * k * 0.56)) * scale
+            bold = bool(txt.bold) if i == 0 else False
+        m = Measurer(family, bold, size)
+        prefix = 0.0
+        if legend:
+            prefix = size * 0.72 + 14 * k  # the swatch, then its gap
+            pid = pictures[i] if pictures is not None and i < len(pictures) else ""
+            if pid:
+                prefix += size * 0.95 * aspect(f"pic:{pid}") + 14 * k * 0.6  # the singers' picture
+        for j, row in enumerate(wrap_text(text, m.width, max(1.0, max_w - prefix))):
+            out.append((row, size, bold, i, i, j == 0, m.width(row), prefix))
+    return out
+
+
+def _rows_height(rows: Sequence[_BlockRow], k: float) -> float:
+    return sum(r[1] for r in rows) + 14 * k * max(0, len(rows) - 1)
+
+
+def block_height(lines: list[str], style: KaraokeStyle, W: int, k: float, family: str,
+                 width: Optional[float] = None) -> float:
+    """How tall ``centered_block`` draws ``lines`` in one still segment (what to leave room for)."""
+    info = style.info
+    max_w = width if width is not None else min(W * 0.7, W - 2 * (info.margin * k))
+    family = covering(family, style.text.bold, _text_of("".join(lines)), [BUNDLED_JP, *HAN_FAMILIES])
+    return _rows_height(_block_rows(lines, style, k, family, max_w), k)
+
+
+def centered_block(lines: list[str], style: KaraokeStyle, W: int, H: int, k: float, family: str,
+                   pts: Sequence[tuple[float, float]], x_center: float, *, anchor: str = "center",
+                   width: Optional[float] = None, max_h: Optional[float] = None,
+                   swatches: Optional[Sequence[tuple[list[str], str]]] = None,
+                   pictures: Optional[Sequence[str]] = None) -> list[str]:
+    """The title / credits (or, with ``swatches``, the singer legend) as a centred block in the scrolling
+    column, or under the cover panel: the lines stacked, the title bigger and bolder, the rest smaller
+    and lighter, in the lyric font / outline / glow.  ``width`` / ``max_h``: the room it has — it wraps
+    to that width and shrinks (then drops its last rows) to fit that height.  The block's anchor (its
+    centre, top, or bottom) follows ``pts`` — (video time, y) waypoints — with a \\move per segment
+    (\\pos when a segment is still), fading in on the first and out on the last.  ``info.plate``: a soft
+    dark plate behind the whole block."""
+    from .pictures import aspect, drawing
+
+    info, txt, glow = style.info, style.text, style.glow
+    family = covering(family, txt.bold, _text_of("".join(lines)), [BUNDLED_JP, *HAN_FAMILIES])
+
+    legend = swatches is not None
+    color = _bgr(info.color or txt.color_unsung)
+    outline_c = _bgr(txt.outline_color)
+    max_w = width if width is not None else min(W * 0.7, W - 2 * (info.margin * k))
+    gap = 14 * k
+    fade_in, fade_out = max(0, style.timing.fade_in_ms), max(0, style.timing.fade_out_ms)
+    sub_alpha = _sub_alpha(info)
+
+    rows = _block_rows(lines, style, k, family, max_w, swatches=swatches, pictures=pictures)
+    total = _rows_height(rows, k)
+    scale = 1.0
+    for _ in range(8):  # too tall for the room it has: set it smaller, a step at a time
+        if max_h is None or total <= max_h or not rows:
+            break
+        scale *= 0.92
+        rows = _block_rows(lines, style, k, family, max_w, scale, swatches, pictures)
+        total = _rows_height(rows, k)
+    while max_h is not None and len(rows) > 1 and total > max_h:  # still too tall: the last rows go
+        rows = rows[:-1]
+        total = _rows_height(rows, k)
+
+    def top_of(y: float) -> float:
+        return y - total if anchor == "bottom" else (y if anchor == "top" else y - total / 2)
+
+    events: list[str] = []
+    for si, ((ta, ya), (tb, yb)) in enumerate(zip(pts, pts[1:])):
+        if tb <= ta:
+            continue
+        dy = yb - ya
+        dur = max(1, int(tb - ta))
+        if len(pts) == 2:
+            fad = f"\\fad({fade_in},{fade_out})" if (fade_in or fade_out) else ""
+        elif si == 0:
+            fad = f"\\fad({fade_in},0)" if fade_in else ""
+        elif si == len(pts) - 2:
+            fad = f"\\fad(0,{fade_out})" if fade_out else ""
+        else:
+            fad = ""
+        y = top_of(ya)
+
+        def spot(x: float, yy: float) -> str:
+            """Where a swatch / picture (\an7, its top-left corner) goes — along with the text."""
+            if abs(dy) >= 0.5:
+                return f"\\an7\\move({x:.1f},{yy:.1f},{x:.1f},{yy + dy:.1f},0,{dur})"
+            return f"\\an7\\pos({x:.1f},{yy:.1f})"
+
+        if info.plate and rows:
+            half = max(r[6] + r[7] for r in rows) / 2
+            events.append(_plate(x_center - half, y, x_center + half, y + total, k, ta, tb, dy=dy, dur=dur, fad=fad))
+        for text, size, bold, level, entry, first, tw, prefix in rows:
+            y += size  # the row's baseline (\an2)
+            row_left = x_center - (prefix + tw) / 2
+            text_x = row_left + prefix + tw / 2  # its centre (\an2): the whole row is centred
+            if legend and first:
+                side = size * 0.72
+                sy = y - size * 0.78
+                colours, mix = swatches[entry]
+                stripes = _blend(colours, 12) if (mix == "gradient" and len(colours) > 1) else colours
+                each = side / len(stripes)
+                for n, c in enumerate(stripes):
+                    w = each + (0.6 if n < len(stripes) - 1 else 0)  # (no hairline between stripes)
+                    rect = f"m 0 0 l {w:.1f} 0 l {w:.1f} {side:.1f} l 0 {side:.1f}"
+                    events.append(_dialogue(L_INFO, ta, tb, f"{spot(row_left + n * each, sy)}\\bord0"
+                                                            f"\\shad0\\1c{_bgr(c)}{fad}", f"{{\\p1}}{rect}{{\\p0}}"))
+                frame = f"m 0 0 l {side:.1f} 0 l {side:.1f} {side:.1f} l 0 {side:.1f}"
+                events.append(_dialogue(L_INFO_GLOW, ta, tb, f"{spot(row_left, sy)}\\1a&HFF&"
+                                                             f"\\3c{outline_c}\\bord{max(1.5, txt.outline * k * 0.5):.1f}"
+                                                             f"\\shad{txt.shadow * k * 0.4:.2f}{fad}",
+                                        f"{{\\p1}}{frame}{{\\p0}}"))
+                pid = pictures[entry] if pictures is not None and entry < len(pictures) else ""
+                if pid:
+                    ph = size * 0.95
+                    pw = ph * aspect(f"pic:{pid}")
+                    for tags, path in drawing(f"pic:{pid}", max(1, round(pw)), max(1, round(ph))):
+                        events.append(_dialogue(L_INFO, ta, tb, f"{spot(row_left + side + gap * 0.6, y - size * 0.95)}"
+                                                                f"\\bord0\\shad0\\blur0{tags}"
+                                                                f"{fad}\\p1", path))
+            if abs(dy) >= 0.5:
+                pos = f"\\an2\\move({text_x:.1f},{y:.1f},{text_x:.1f},{y + dy:.1f},0,{dur})"
+            else:
+                pos = f"\\an2\\pos({text_x:.1f},{y:.1f})"
+            font = f"\\fn{family}\\fs{size:.1f}\\b{int(bold)}"
+            if glow.enabled:
+                events.append(_dialogue(L_INFO_GLOW, ta, tb,
+                                        f"{font}{pos}\\1a&HFF&\\3c{_bgr(glow.color_unsung)}"
+                                        f"\\3a&H{int(round(255 * (1 - glow.strength / 100))):02X}&"
+                                        f"\\bord{glow.size * k * (0.7 if level == 0 else 0.5):.1f}"
+                                        f"\\blur{glow.blur * k:.1f}\\shad0{fad}", _escape(text)))
+            events.append(_dialogue(L_INFO, ta, tb,
+                                    f"{font}{pos}\\1c{color}{'' if level == 0 else sub_alpha}\\3c{outline_c}"
+                                    f"\\bord{txt.outline * k * (0.7 if level == 0 else 0.55):.2f}"
+                                    f"\\shad{txt.shadow * k * 0.6:.2f}{fad}", _escape(text)))
+            y += gap
+    return events
+
+
 def _blend(colours: list[str], n: int) -> list[str]:
     """``n`` colours blending through ``colours`` from left to right (hex #RRGGBB)."""
     rgb = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in colours]
@@ -463,6 +708,23 @@ def _blend(colours: list[str], n: int) -> list[str]:
         t = f - j
         out.append("#" + "".join(f"{round(a + (b - a) * t):02X}" for a, b in zip(rgb[j], rgb[j + 1])))
     return out
+
+
+def progress_events(style: KaraokeStyle, W: int, H: int, k: float, t0: float, t1: float) -> list[str]:
+    """A thin line along the top or bottom edge showing how far into the audio the video is: in the sung
+    colour, from the left edge, growing to the full width between ``t0`` and ``t1``."""
+    pr = style.progress
+    if not pr.enabled or t1 <= t0:
+        return []
+    thick = max(1.0, pr.thickness * k)
+    y0 = 0.0 if pr.position == "top" else H - thick
+    alpha = int(round(255 * (1 - pr.opacity / 100)))
+    rect = f"m 0 0 l {W:.0f} 0 l {W:.0f} {thick:.1f} l 0 {thick:.1f}"
+    return [_dialogue(L_INFO, t0, t1,
+                      f"\\an7\\pos(0,{y0:.1f})\\bord0\\shad0\\1c{_bgr(pr.color or style.text.color_sung)}"
+                      f"\\1a&H{alpha:02X}&\\clip(0,{y0:.1f},1,{y0 + thick:.1f})"
+                      f"\\t(0,{int(round(t1 - t0))},\\clip(0,{y0:.1f},{W},{y0 + thick:.1f}))",
+                      f"{{\\p1}}{rect}{{\\p0}}")]
 
 
 def info_style(family: str, size: float) -> str:

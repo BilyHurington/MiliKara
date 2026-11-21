@@ -218,6 +218,10 @@ export interface AiRoundtrip { id: string; created: string; snapshot_id: string;
 export interface BackgroundAsset {
   id: string; sha256: string; path: string; filename: string | null; kind: 'image' | 'video';
   width: number; height: number; duration_ms: number | null;
+  /** a cover-as-background (see KaraokeStyle.background): 'blur' = whole frame, 'split' = a side panel */
+  cover?: 'blur' | 'split' | null;
+  /** which side the cover panel sits on when cover === 'split' */
+  side?: 'left' | 'right' | null;
 }
 
 /** What a burned video shows by default (ProjectView.view.picture). */
@@ -246,12 +250,24 @@ export interface KaraokeStyle {
   /** name of the saved style it was loaded from ("" = none) */
   preset: string;
   layout: {
-    position: 'bottom' | 'top'; lines: number; arrangement: 'alternate' | 'center';
+    position: 'bottom' | 'top' | 'center'; lines: number; arrangement: 'alternate' | 'center';
     margin_v: number; line_spacing: number; margin_h: number; alternate_indent: number; shrink_long_lines: boolean;
     /** long lines: split at a space / punctuation, or where the AI readings suggested; off = keep whole */
     wrap?: 'off' | 'auto' | 'ai';
     /** a line still too wide may reach this close to the frame's edges before it shrinks */
     edge_margin?: number;
+    /** position === 'center': the column flows (flow) or the sung line is pinned on a reading line (prompter) */
+    center_scroll?: 'flow' | 'prompter';
+    /** position === 'center': where the reading line sits, as a share of the frame's height (0.2–0.8) */
+    reading_line?: number;
+    /** prompter: the neighbouring lines stay visible and the column steps up a line at a time */
+    prompter_neighbors?: boolean;
+    /** centre mode: how far (%) the lines that are not being sung step back */
+    inactive_dim?: number;
+    /** centre mode: the column fades out toward the top and bottom edges instead of cutting off */
+    edge_fade?: boolean;
+    /** centre mode: the line being sung is drawn larger by this much (% of its normal size, 100 = off) */
+    current_scale?: number;
   };
   text: {
     font: string; size: number; bold: boolean; color_unsung: string; color_sung: string; outline_color: string;
@@ -287,19 +303,38 @@ export interface KaraokeStyle {
     start_ms: number; duration_ms: number; size: number; margin: number; color: string; accent: string;
     /** the same card again at the end of the song (on whenever the card is) */
     outro?: boolean; outro_duration_ms?: number;
+    /** where the card sits: auto follows the layout, or a top corner, the scrolling column, under the cover */
+    placement?: 'auto' | 'corner' | 'column' | 'cover';
+    /** the two cards only, from the start to the end of the song, or again in the long gaps with no lyric */
+    mode?: 'start' | 'persist' | 'repeat';
+    /** mode 'repeat': a stretch this long (ms) with no lyric on screen shows the card again */
+    repeat_gap_ms?: number;
+    /** the lines under the title, opacity in % (100 = fully opaque) */
+    sub_opacity?: number;
+    /** a dark plate behind the card, so it reads on a busy picture */
+    plate?: boolean;
   };
+  /** no video / photo: draw the song's cover as the picture (see POST …/background/cover) */
+  background?: { mode: 'none' | 'blur' | 'split'; blur: number; dim: number; side: 'left' | 'right' };
   /** burn-in audio: vocals kept at this % over the full instrumental */
   output?: { vocal_keep_pct: number };
   /** singers (多人演唱): who sings which part is kept in the lyrics (Line.singers / singer_spans) */
   singers?: KaraokeSingers;
   /** countdown dots before the first line / after a long pause (time based; a line can say otherwise) */
   countdown?: KaraokeCountdown;
+  /** a thin line along one edge showing how far into the audio the video is (for a frame with no background) */
+  progress?: KaraokeProgress;
   /** text or symbols (colour emoji in their own colours) and a picture at the start / end of every line;
    *  '' colour = the lyrics' unsung colour */
   decor?: { start: string; end: string; color: string; size_pct: number; start_picture?: string; end_picture?: string };
 }
 
 export interface KaraokeCountdown { intro: boolean; interlude: boolean; min_gap_ms: number; dots: number }
+
+/** A thin line showing how far into the audio the video is; '' colour = the lyrics' sung colour */
+export interface KaraokeProgress {
+  enabled: boolean; position: 'top' | 'bottom'; thickness: number; color: string; opacity: number;
+}
 
 /** A saved subtitle style (预设); 默认 is built in and read-only. */
 export interface SavedStyle { id: string; name: string; builtin: boolean; updated: string | null; style: KaraokeStyle }

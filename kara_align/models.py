@@ -637,6 +637,9 @@ class BackgroundAsset(_Base):
     width: int
     height: int
     duration_ms: Optional[int] = None  # video only
+    # how this background was made from the song's cover (KaraokeBackground); None = uploaded
+    cover: Optional[Literal["blur", "split"]] = None
+    side: Optional[Literal["left", "right"]] = None  # "split": the side the cover panel is on
 
 
 # ---------------------------------------------------------------------------
@@ -822,7 +825,23 @@ class KaraokeGlow(_KaraokeBase):
 
 
 class KaraokeLayout(_KaraokeBase):
-    position: Literal["bottom", "top"] = "bottom"
+    position: Literal["bottom", "top", "center"] = "bottom"
+    # centre mode: the column of lyrics scrolls past the reading line — "flow" sweeps continuously
+    # (the line being sung drifts up as the next one rises into place), "prompter" pins the sung line
+    # on the reading line and the others slide past.  See build_ass.
+    center_scroll: Literal["flow", "prompter"] = "flow"
+    # centre mode: the line being sung sits at this fraction of the frame height (0.5 = exact middle)
+    reading_line: float = Field(default=0.46, ge=0.2, le=0.8)
+    # centre mode, prompter: the neighbouring lines stay visible above and below the pinned one and the
+    # column steps up a line at a time (off: one line on the reading line at a time, like a page)
+    prompter_neighbors: bool = True
+    # centre mode: the lines that are not being sung step back by this much (% of transparency) ...
+    inactive_dim: int = Field(default=55, ge=0, le=90)
+    # ... and the column fades out toward the top and bottom edges of the frame instead of cutting off
+    edge_fade: bool = True
+    # centre mode: the line being sung is drawn larger by this much (% of its normal size; 100 = off).
+    # It is laid out at that size, so the sweep and the singer colours stay on the glyphs
+    current_scale: int = Field(default=100, ge=100, le=160)
     lines: int = Field(default=2, ge=1, le=3)
     arrangement: Literal["alternate", "center"] = "alternate"
     margin_v: int = Field(default=70, ge=0, le=400)  # px from the top / bottom edge
@@ -896,6 +915,18 @@ class KaraokeOutput(_KaraokeBase):
     vocal_keep_pct: float = Field(default=20.0, ge=0.0, le=100.0)
 
 
+class KaraokeBackground(_KaraokeBase):
+    """What stands behind the subtitles when there is no video or picture (see karaoke.cover):
+    "none" = plain black; "blur" = the song's cover, blurred and dimmed, full-frame;
+    "split" = the cover as a panel on one side with the lyrics on the other.  A cover comes from
+    the lyrics' music link (the same source ``cover_background`` uses)."""
+
+    mode: Literal["none", "blur", "split"] = "none"
+    blur: int = Field(default=45, ge=0, le=100)  # % — how much the cover is blurred ("blur" mode)
+    dim: int = Field(default=50, ge=0, le=100)  # % — black overlay that makes the words readable
+    side: Literal["left", "right"] = "left"  # which side the cover panel is on ("split" mode)
+
+
 SongInfoField = Literal["title", "artist", "album", "lyricist", "composer", "arranger"]
 
 
@@ -906,6 +937,16 @@ class KaraokeSongInfo(_KaraokeBase):
     with its own (``Project.song_info_text``)."""
 
     enabled: bool = False
+    # where the card goes: "auto" picks — under a split cover panel, else in the centred scrolling
+    # column (centre layout), else in a top corner; the other three force one (a pick that does not
+    # apply where it is asked for — "cover" without a split background, "column" without a centre
+    # layout — falls back to a corner).
+    placement: Literal["auto", "corner", "column", "cover"] = "auto"
+    # corner card only: "start" = once at the start and (with outro) once at the end; "persist" = from
+    # its start time to the end of the song; "repeat" = at the start, at the end, and again wherever
+    # the lyrics leave the frame empty for at least ``repeat_gap_ms``
+    mode: Literal["start", "persist", "repeat"] = "start"
+    repeat_gap_ms: int = Field(default=5000, ge=1500, le=60000)  # "repeat": a gap at least this long
     position: Literal["top-left", "top-right"] = "top-left"
     fields: list[SongInfoField] = Field(default_factory=lambda: ["title", "artist"])
     start_ms: int = Field(default=500, ge=0, le=60000)  # audio time
@@ -917,6 +958,19 @@ class KaraokeSongInfo(_KaraokeBase):
     margin: int = Field(default=56, ge=0, le=400)  # from the top and side edges
     color: str = _color("", follow=True)  # "" = the lyrics' unsung colour
     accent: str = _color("", follow=True)  # accent bar; "" = the lyrics' sung colour
+    sub_opacity: int = Field(default=90, ge=20, le=100)  # the smaller lines, % of the colour's opacity
+    plate: bool = False  # a soft dark plate behind the card (readable over a blurred cover)
+
+
+class KaraokeProgress(_KaraokeBase):
+    """A thin line along one edge showing how far into the audio the video is (an option for a frame
+    with no video or picture, where the words are all there is to see)."""
+
+    enabled: bool = False
+    position: Literal["top", "bottom"] = "bottom"
+    thickness: int = Field(default=6, ge=2, le=24)  # px at 1080 high
+    color: str = _color("", follow=True)  # "" = the lyrics' sung colour
+    opacity: int = Field(default=80, ge=10, le=100)
 
 
 class KaraokeSinger(_KaraokeBase):
@@ -1095,6 +1149,8 @@ class KaraokeStyle(_KaraokeBase):
     timing: KaraokeTiming = Field(default_factory=KaraokeTiming)
     effects: KaraokeEffects = Field(default_factory=KaraokeEffects)
     info: KaraokeSongInfo = Field(default_factory=KaraokeSongInfo)
+    background: KaraokeBackground = Field(default_factory=KaraokeBackground)
+    progress: KaraokeProgress = Field(default_factory=KaraokeProgress)
     theme: Optional[KaraokeTheme] = None  # None = colours set by hand (or a preset)
     output: KaraokeOutput = Field(default_factory=KaraokeOutput)
     singers: KaraokeSingers = Field(default_factory=KaraokeSingers)

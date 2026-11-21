@@ -492,6 +492,55 @@ describe('colour template requests (F-M12)', () => {
     await waitFor(() => expect(box.scrollTop).toBe(0));
   });
 
+  it('a centred column can be set up with one click, and every slider still works', async () => {
+    mockApi({ 'GET /api/karaoke/styles': () => [builtinSaved()] });
+    const base = plainStyle();
+    base.layout.position = 'center';
+    let latest: KaraokeStyle = base;
+    function Host() {
+      const [s, setS] = useState(base);
+      latest = s;
+      return <StylePanel style={s} onChange={setS} fonts={[]} defaultFont="" />;
+    }
+    renderUI(<Host />);
+    await userEvent.click(screen.getByRole('tab', { name: '布局' }));
+    // the centred default already matches a bundle, so the buttons show which one
+    const bundles = within(screen.getByRole('group', { name: '快速开始' }));
+    expect(bundles.getByRole('radio', { name: '流动' })).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(bundles.getByRole('radio', { name: '强调当前行' }));
+    expect(latest.layout.center_scroll).toBe('flow');
+    expect(latest.layout.inactive_dim).toBe(55);
+    expect(latest.layout.current_scale).toBe(130);
+    expect(bundles.getByRole('radio', { name: '强调当前行' })).toHaveAttribute('aria-checked', 'true');
+    // changing one of its sliders keeps the value and reports a custom mix (nothing is locked)
+    const dim = screen.getByRole('textbox', { name: '其它行变暗（输入数值）' });
+    fireEvent.focus(dim);
+    fireEvent.change(dim, { target: { value: '70' } });
+    fireEvent.blur(dim);
+    expect(latest.layout.inactive_dim).toBe(70);
+    expect(bundles.queryByRole('radio', { name: '强调当前行', checked: true })).toBeNull();
+    expect(screen.getByText(/当前是自定义组合/)).toBeTruthy();
+    // and back again with one click
+    await userEvent.click(bundles.getByRole('radio', { name: '读唱线' }));
+    expect(latest.layout.center_scroll).toBe('prompter');
+    expect(latest.layout.prompter_neighbors).toBe(true);
+    expect(latest.layout.inactive_dim).toBe(55);
+    expect(latest.layout.current_scale).toBe(100);
+    // 极简: one line on screen, nothing left to dim
+    await userEvent.click(bundles.getByRole('radio', { name: '极简' }));
+    expect(latest.layout.center_scroll).toBe('prompter');
+    expect(latest.layout.prompter_neighbors).toBe(false);
+    expect(latest.layout.inactive_dim).toBe(0);
+  });
+
+  it('the bundle buttons only appear for a centred column', async () => {
+    mockApi({ 'GET /api/karaoke/styles': () => [builtinSaved()] });
+    renderUI(<StylePanel style={plainStyle()} onChange={() => undefined} fonts={[]} defaultFont="" />);
+    await userEvent.click(screen.getByRole('tab', { name: '布局' }));
+    expect(screen.getByRole('radio', { name: '靠底' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByText('快速开始')).toBeNull();
+  });
+
   it('the outline once sung: its own colour, or the same as before', async () => {
     mockApi({ 'GET /api/karaoke/styles': () => [builtinSaved()] });
     const base = plainStyle();
